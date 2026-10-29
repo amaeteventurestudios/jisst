@@ -56,6 +56,8 @@ function startLive(chat, fresh = false) {
   // opened from a message alert
   const lk = /^#link=([\w-]+)$/.exec(location.hash);
   if (lk) { history.replaceState(null, '', location.pathname + location.search); if (confirm(`Link a computer to your ${BRAND.name}? Only say yes if you just scanned the code on your own computer.`)) approveLink(lk[1]); }
+  const ck = /^#call=([^|]+)\|(.+)$/.exec(location.hash);
+  if (ck) { history.replaceState(null, '', location.pathname + location.search); const rid = decodeURIComponent(ck[1]); openSoon(rid); answerSoon(rid, decodeURIComponent(ck[2])); }
   const m = /^#room=(.+)$/.exec(location.hash); if (m) { history.replaceState(null, '', location.pathname + location.search); openSoon(decodeURIComponent(m[1])); }
 }
 // a brand-new account starts with a chat with the Jisste helper instead of an empty list
@@ -66,7 +68,13 @@ function greet(tries = 40) {
 }
 // the chat list may still be loading when an alert opens a chat: wait for that room to arrive
 function openSoon(id, then, tries = 40) { if (S.engine?.room(id)) { openRoom(id); return then?.(); } if (tries > 0) setTimeout(() => openSoon(id, then, tries - 1), 250); }
-navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.jisst === 'open' && e.data.room && S.engine) { S.view = null; openSoon(e.data.room); } });
+navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.jisst === 'open' && e.data.room && S.engine) { S.view = null; openSoon(e.data.room); if (e.data.call) answerSoon(e.data.room, e.data.call); } });
+// Answer from a ringing alert: wait for the chat and its call message, then join
+function answerSoon(roomId, callId, tries = 50) {
+  const m = S.engine?.timeline(roomId).find((x) => x.call && x.call.id === callId && x.call.state !== 'ended');
+  if (m) { if (!CALLS.active()) CALLS.join(roomId, m.call); return; }
+  if (tries > 0) setTimeout(() => answerSoon(roomId, callId, tries - 1), 200); else toast('That call has ended.');
+}
 function startDemo(name) {
   S.demo = true;
   if (!name) return welcome();
@@ -507,7 +515,18 @@ async function makeAgent(f) {
 
 // ---------- Calls, You ----------
 function tabCalls() {
-  return html`${top('Calls')}<div class="scroll"><div class="empty"><div class="big">${icon('calls')}</div><h2>Voice and video calls are coming</h2><p>Free calls with friends, and talking to your agents out loud, are the next big step for ${BRAND.name}.</p></div></div>`;
+  const me = S.engine.me.user_id, list = [];
+  for (const r of S.engine.rooms()) {
+    const tl = S.engine.timeline(r.id), st = callStates(tl);
+    for (const m of tl) if (m.call && m.call.state !== 'ended') list.push({ r, m, live: st.live(m) });
+  }
+  list.sort((a, b) => b.m.ts - a.m.ts);
+  return html`${top('Calls')}<div class="scroll">
+    <p class="fine pad" style="text-align:left;padding-bottom:0">Free voice and video calls, and screen sharing. Private chats get private calls. To start one, open a chat and tap the phone or camera.</p>
+    ${list.length ? html`<div class="section">Recent</div>${list.slice(0, 60).map(({ r, m, live }) => html`<div class="row">${avatar({ id: r.other || r.id, name: r.name, group: !r.dm, size: 'sm' })}
+      <span class="mid"><span class="l1"><span class="name">${r.name}</span></span><span class="l2"><span class="prev callline ${m.mine ? '' : 'in'}">${icon(m.mine ? 'callout' : 'callin')}${m.mine ? 'Outgoing' : 'Incoming'} ${m.call.video ? 'video' : 'voice'} call · ${when(m.ts)}${live ? ' · going on now' : ''}</span></span></span>
+      ${live ? html`<button type="button" class="pill" data-joinroom="${r.id}" data-joinid="${m.id}">Join</button>` : html`<button type="button" class="iconbtn" data-callback="${r.id}" data-video="${m.call.video ? 1 : ''}" aria-label="Call ${r.name} again">${icon(m.call.video ? 'video' : 'calls')}</button>`}</div>`)}`
+      : html`<div class="empty"><div class="big">${icon('calls')}</div><h2>No calls yet</h2><p>Your calls show up here.</p></div>`}</div>`;
 }
 function tabYou() {
   const me = S.engine.me, theme = store.get('theme', 'system'), handle = store.get('me')?.handle;
@@ -772,6 +791,8 @@ document.addEventListener('click', async (e) => {
   if (d.call) return CALLS.control(d.call);
   if (d.filter) { S.filter = d.filter; for (const c of document.querySelectorAll('[data-filter]')) c.setAttribute('aria-pressed', String(c.dataset.filter === d.filter)); $('#chatlist').innerHTML = String(chatRows()); return; }
   if (d.ring) { const box = t.closest('.ring'); box.remove(); if (d.ring === 'yes') { const m = S.engine.timeline(box.dataset.room).find((x) => x.id === box.dataset.mid); if (m) { if (S.room !== box.dataset.room) openRoom(box.dataset.room); CALLS.join(box.dataset.room, m.call); } } return; }
+  if (d.callback) { if (CALLS.active()) return toast("You're already in a call."); return CALLS.start(d.callback, !!d.video); }
+  if (d.joinroom) { const m = S.engine.timeline(d.joinroom).find((x) => x.id === d.joinid); if (m?.call) CALLS.join(d.joinroom, m.call); return; }
   if (d.joincall) { const m = S.engine.timeline(S.room).find((x) => x.id === d.joincall); if (m?.call) CALLS.join(S.room, m.call); return; }
   if (d.react && d.mid) { closeSheet(); return S.engine.react(S.room, d.mid, d.react).catch((err) => toast(err.message)); }
   if (d.msgmenu) return openSheet(d.msgmenu);

@@ -90,7 +90,7 @@ export function calls({ getEngine, isDemo, roomInfo }) {
     const engine = getEngine(), r = roomInfo(roomId);
     if (cur) return toast("You're already in a call.");
     const video = !!info.video;
-    cur = { roomId, id: info.id, el: screen(r, video), started: !!info.started };
+    cur = { roomId, id: info.id, video: !!video, el: screen(r, video), started: !!info.started };
     cur.timer = setInterval(tick, 1000);
     if (isDemo()) return demoCall(r, video);
     try {
@@ -161,7 +161,11 @@ export function calls({ getEngine, isDemo, roomInfo }) {
     c.stream?.getTracks().forEach((t) => t.stop());
     c.el.remove();
     // the last one out marks the call as over in the chat
-    if (byMe && alone && c.id) getEngine()?.sendRaw(c.roomId, { msgtype: 'm.text', body: 'Call ended', 'io.jisst.call': { id: c.id, state: 'ended' } }).catch(() => {});
+    if (byMe && alone && c.id) {
+      getEngine()?.sendRaw(c.roomId, { msgtype: 'm.text', body: 'Call ended', 'io.jisst.call': { id: c.id, state: 'ended' } }).catch(() => {});
+      // stop the others' phones ringing (they get a missed call alert instead)
+      if (!isDemo()) api.ringCall({ room: c.roomId, token: getEngine().token(), id: c.id, state: 'ended', video: !!c.video }).catch(() => {});
+    }
   }
 
   return {
@@ -171,6 +175,8 @@ export function calls({ getEngine, isDemo, roomInfo }) {
       const key = r.encrypted ? b64(crypto.getRandomValues(new Uint8Array(32))) : undefined;
       const call = { id, video, state: 'started', ...(key ? { key } : {}) };
       getEngine().sendRaw(roomId, { msgtype: 'm.text', body: video ? '🎥 Video call' : '📞 Voice call', 'io.jisst.call': call }).catch(() => toast("Couldn't start the call."));
+      // ring the others' phones through alerts, even when Jisste is closed
+      if (!isDemo()) api.ringCall({ room: roomId, token: getEngine().token(), id, video, name: r.name }).catch(() => {});
       return connect(roomId, { ...call, started: true });
     },
     join: (roomId, call) => connect(roomId, call),

@@ -44,6 +44,8 @@ const P = {
   forward: '<path d="M14 8l6 5-6 5M20 13H10a6 6 0 0 0-6 6"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
   translate: '<path d="M4 5h9M8.5 3v2M6 5c.7 3 2.6 5.4 5.5 6.8M11 5c-.8 3.6-3.3 6.5-7 8"/><path d="M12.5 21l4-9 4 9M14 17.6h5"/>',
+  callout: '<path d="M14 4h6v6M20 4l-7 7"/><path d="M5 4h3l1.5 4-2 1.2a10 10 0 0 0 5.3 5.3l1.2-2 4 1.5v3a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
+  callin: '<path d="M20 4l-7 7M13 5v6h6"/><path d="M5 4h3l1.5 4-2 1.2a10 10 0 0 0 5.3 5.3l1.2-2 4 1.5v3a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
   phone: '<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/>',
   laptop: '<rect x="4.5" y="5" width="15" height="10" rx="1.5"/><path d="M2.5 18.5h19"/>',
   key: '<circle cx="8" cy="14" r="4"/><path d="M11 11l9-9M16 6l3 3M14 8l2 2"/>',

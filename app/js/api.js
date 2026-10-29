@@ -22,6 +22,7 @@ export const api = {
   report: (r) => req('POST', '/api/report', r),
   translate: (text, target) => req('POST', '/api/translate', { text, target }),
   callToken: (room, token) => req('POST', '/api/calls/token', { room, token }),
+  ringCall: (r) => req('POST', '/api/calls/ring', r),
   linkStart: (device) => req('POST', '/api/link/start', { device }),
   linkPoll: (code, secret) => req('POST', '/api/link/poll', { code, secret }),
   linkApprove: (code) => req('POST', '/api/link/approve', { code }),

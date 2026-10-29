@@ -199,3 +199,22 @@ test('a computer links by QR code: the phone approves, the computer gets its own
   const whoami = await fetch(hs.url + '/_matrix/client/v3/account/whoami', { headers: { authorization: 'Bearer ' + done.body.chat.access_token } });
   assert.equal(whoami.status, 401, 'the computer is signed out of the chat');
 });
+
+test('a call rings the others through phone alerts, and stops ringing when it ends', async () => {
+  const ua = crypto.createECDH('prime256v1'); ua.generateKeys();
+  const auth = crypto.randomBytes(16), got = [];
+  const pushSvc = await listen(async (req, res) => { const c = []; for await (const d of req) c.push(d); got.push({ headers: req.headers, body: Buffer.concat(c) }); res.statusCode = 201; res.end(); });
+  for (const rec of gw.db.all('push').filter((x) => x.user === ada.me.id)) gw.db.del('push', rec.pushkey);
+  gw.db.put('push', 'ring-test', { pushkey: 'ring-test', user: ada.me.id, sub: { endpoint: pushSvc.url + '/push/ring', keys: { p256dh: ua.getPublicKey().toString('base64url'), auth: auth.toString('base64url') } }, at: Date.now() });
+  const { room_id } = await mx(tunde, 'POST', '/_matrix/client/v3/createRoom', { invite: [ada.chat.user_id] });
+  await mx(ada, 'POST', `/_matrix/client/v3/join/${encodeURIComponent(room_id)}`, {});
+  assert.equal((await post('/api/calls/ring', { room: room_id, token: 'nope', id: 'c1' })).status, 401);
+  const r = await post('/api/calls/ring', { room: room_id, token: tunde.chat.access_token, id: 'c1', video: true });
+  assert.equal(r.status, 200); assert.equal(r.body.rang, 1);
+  const ring = JSON.parse(decrypt(got[0].body, ua, auth));
+  assert.equal(ring.kind, 'call'); assert.equal(ring.call, 'c1'); assert.equal(ring.video, true); assert.equal(ring.room, room_id);
+  assert.equal(ring.title, 'Tunde Bakare'); assert.equal(got[0].headers.ttl, '45');
+  await post('/api/calls/ring', { room: room_id, token: tunde.chat.access_token, id: 'c1', state: 'ended' });
+  assert.equal(JSON.parse(decrypt(got[1].body, ua, auth)).kind, 'call-end');
+  pushSvc.s.close();
+});

@@ -241,6 +241,30 @@ export function gateway(cfg = config()) {
       const name = joined.joined[whoami.user_id].display_name || whoami.user_id;
       return json(res, 200, { url: cfg.livekit.url, token: callTicket(cfg.livekit, room, whoami.user_id, name) });
     }
+    // A call rings through phone alerts: the caller's app asks, we check they're in the chat, and alert everyone else in it.
+    // We learn only that a call happened (the call server knows that anyway), never what is said.
+    if (p === '/api/calls/ring' && req.method === 'POST') {
+      if (limited('ring:' + ip, 60, 600_000)) return fail(res, 429, 'Too many tries. Please wait a few minutes.');
+      const b = await body(req), room = String(b.room || ''), token = String(b.token || ''), id = String(b.id || '').slice(0, 40);
+      const asUser = (path) => fetch(cfg.hs + path, { headers: { authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(5000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const whoami = await asUser('/_matrix/client/v3/account/whoami');
+      if (!whoami?.user_id) return fail(res, 401, 'Please sign in again.');
+      const joined = await asUser(`/_matrix/client/v3/rooms/${encodeURIComponent(room)}/joined_members`);
+      if (!joined?.joined?.[whoami.user_id]) return fail(res, 403, "You're not in this chat.");
+      const caller = joined.joined[whoami.user_id].display_name || whoami.user_id, group = Object.keys(joined.joined).length > 2;
+      const people = new Map(db.all('people').map((x) => [x.mxid, x.id]));
+      const msg = b.state === 'ended' ? { kind: 'call-end', room, call: id, title: caller, video: !!b.video }
+        : { kind: 'call', room, call: id, video: !!b.video, title: caller, body: `${b.video ? 'Video' : 'Voice'} call${group ? ' in ' + String(b.name || 'a group').slice(0, 60) : ''}` };
+      let rang = 0;
+      for (const mxid of Object.keys(joined.joined)) {
+        if (mxid === whoami.user_id || !people.has(mxid)) continue;
+        for (const rec of db.all('push').filter((x) => x.user === people.get(mxid))) {
+          const st = await pushSend(rec.sub, msg, vapid, 45).catch(() => 0);
+          if (st === 404 || st === 410) db.del('push', rec.pushkey); else if (st >= 200 && st < 300) rang++;
+        }
+      }
+      return json(res, 200, { ok: true, rang });
+    }
     if (p === '/api/report' && req.method === 'POST') {
       const s = who(req), me = s && db.get('people', s.u); if (!me) return fail(res, 401, 'Please sign in.');
       if (limited('report:' + s.u, 20, 3600_000)) return fail(res, 429, 'Too many reports. Please wait a while.');

@@ -55,6 +55,9 @@ export function demoEngine({ name = 'You' } = {}) {
   mk('r-meetups', { name: 'Saturday meetups', community: 'c-lagos', members: [me.user_id, '@tunde:demo', '@kofi:demo', '@amara:demo'], events: [ev('@kofi:demo', 'Who is coming to Lekki on Saturday?', 6 * H), ev('@amara:demo', 'Me!', 5.5 * H)] });
   rooms.get('r-crew').community = 'c-lagos';
   rooms.get('r-lagos-news').read = 0; rooms.get('r-meetups').read = 1;
+  // a few calls for the Calls tab
+  rooms.get('r-tunde').events.unshift(ev('@tunde:demo', '📞 Voice call', 26 * H, { call: { id: 'cd1', video: false, state: 'started' } }), ev('@tunde:demo', 'Call ended', 25.8 * H, { call: { id: 'cd1', state: 'ended' } }));
+  rooms.get('r-family').events.splice(1, 0, ev(me.user_id, '🎥 Video call', 28 * H, { call: { id: 'cd2', video: true, state: 'started' } }), ev(me.user_id, 'Call ended', 27.7 * H, { call: { id: 'cd2', state: 'ended' } }));
   rooms.get('r-family').fav = true;
   // status updates (24 hours): user -> [{ id, text, bg, ts, seen }]
   const status = new Map([
@@ -63,7 +66,7 @@ export function demoEngine({ name = 'You' } = {}) {
     ['@kofi:demo', [{ id: 's4', kind: 'text', text: 'Back from Accra. Missed you all', bg: '#6b3fa0', ts: t0 - 20 * H, seen: true }]],
   ]);
   const seenBy = new Map();   // my status id -> names
-  rooms.get('r-tunde').read = 1; rooms.get('r-zainab').read = 2; rooms.get('r-family').read = 2;
+  rooms.get('r-tunde').read = 3; rooms.get('r-zainab').read = 2; rooms.get('r-family').read = 4;
 
   const ctxFor = (r, group) => ({ fetchJson: exampleFetch(now), now: () => new Date(), group, tz: -new Date().getTimezoneOffset(), user: { name: me.name }, urls: { agp: 'https://agentgrandprix.com', api: '' },
     remind: async (at, what) => { const id = 'm' + n++; reminders.push({ id, at, what, room: r.id }); setTimeout(() => { const i = reminders.findIndex((x) => x.id === id); if (i < 0) return; reminders.splice(i, 1); push(r, ev('@reminders:demo', `Reminder: ${what}`, 0, { card: { buttons: [{ label: 'Again in 10 minutes', say: `remind me in 10 minutes to ${what}` }] } })); }, Math.min(Math.max(0, at - now()), 2 ** 31 - 1)); },

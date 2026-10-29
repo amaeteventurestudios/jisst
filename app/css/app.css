@@ -448,3 +448,7 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
 .linkform input::placeholder { text-transform: none; }
 .linkform .btn { width: auto; margin-top: 0 !important; }
 @media (max-width: 899px) { .welcome.withlink { flex-direction: column; } }
+.callline { display: inline-flex; align-items: center; gap: 5px; }
+.callline svg { width: 16px; height: 16px; color: var(--agent); }
+.callline.in svg { color: var(--brand); }
+.pill { background: var(--brand); color: var(--brand-ink); font-weight: 700; border-radius: 16px; padding: 6px 14px; }
