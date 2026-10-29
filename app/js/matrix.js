@@ -452,6 +452,10 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
       r.readUpTo = eventId; changed();
       call('POST', `${C}/rooms/${enc(roomId)}/receipt/${privacy.readTicks ? 'm.read' : 'm.read.private'}/${enc(eventId)}`, {}).catch(() => {});
     },
+    /** Chat backup with a recovery key (crypto.js): 'on', 'locked', 'off', or 'none' where private chats can't run. */
+    backup: async () => (crypto ? crypto.backup() : 'none'),
+    makeRecovery: async () => { if (!crypto) throw new Error('Private chats need a newer browser.'); return crypto.makeRecovery(); },
+    async restore(key) { if (!crypto) throw new Error('Private chats need a newer browser.'); const n = await crypto.restore(key); await retryLocked(); changed(); return n; },
     /** Report a message to the people who run Jisste. */
     report: (roomId, eventId, reason) => call('POST', `${C}/rooms/${enc(roomId)}/report/${enc(eventId)}`, { reason: String(reason).slice(0, 500), score: -100 }),
     /** Favorites are a Matrix room tag, so they follow you to every phone. */

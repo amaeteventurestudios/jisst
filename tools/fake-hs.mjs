@@ -88,6 +88,7 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
   }
   // presence: when each person's app last synced, unless they asked to be shown offline
   const seen = new Map();   // user -> { at, hidden }
+  const keyBackups = new Map();
   function presenceFor(user) {
     const near = new Set(); for (const room of rooms.values()) if (room.members.get(user) === 'join') for (const u of members(room)) if (u !== user) near.add(u);
     return [...near].filter((u) => seen.has(u)).map((u) => { const x = seen.get(u); return { type: 'm.presence', sender: u, content: x.hidden ? { presence: 'offline' } : { presence: Date.now() - x.at < 60e3 ? 'online' : 'offline', last_active_ago: Date.now() - x.at, currently_active: Date.now() - x.at < 60e3 } }; });
@@ -220,6 +221,19 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
     if (p === '/_matrix/media/v3/upload' || p === '/_matrix/client/v1/media/upload') { const mid = id(''); media.set(mid, { type: req.headers['content-type'] || 'application/octet-stream', data: raw }); return json(res, 200, { content_uri: `mxc://${serverName}/${mid}` }); }
     if ((m = p.match(/^\/_matrix\/client\/v3\/presence\/([^/]+)\/status$/)) && req.method === 'PUT') {
       seen.set(me, { at: Date.now(), hidden: b.presence === 'offline' }); for (const w of [...waiters]) w(); return json(res, 200, {});
+    }
+    // chat backup (room_keys): one current backup version per person, keys stored as the phone sent them (locked)
+    if (p === '/_matrix/client/v3/room_keys/version') {
+      const kb = keyBackups.get(me);
+      if (req.method === 'POST') { const v = String((kb?.n || 0) + 1); keyBackups.set(me, { n: +v, version: v, algorithm: b.algorithm, auth_data: b.auth_data, rooms: {} }); return json(res, 200, { version: v }); }
+      if (!kb) return err(res, 404, 'M_NOT_FOUND', 'No current backup version');
+      return json(res, 200, { version: kb.version, algorithm: kb.algorithm, auth_data: kb.auth_data, count: 0, etag: '1' });
+    }
+    if (p === '/_matrix/client/v3/room_keys/keys') {
+      const kb = keyBackups.get(me);
+      if (!kb || u.searchParams.get('version') !== kb.version) return err(res, kb ? 403 : 404, 'M_WRONG_ROOM_KEYS_VERSION', 'Wrong backup version', );
+      if (req.method === 'PUT') { for (const [r, x] of Object.entries(b.rooms || {})) Object.assign((kb.rooms[r] ||= { sessions: {} }).sessions, x.sessions || {}); return json(res, 200, { etag: '1', count: 0 }); }
+      return json(res, 200, { rooms: kb.rooms });
     }
     if (p === '/_matrix/client/v3/sync') {
       const since = u.searchParams.get('since'), timeout = Math.min(+u.searchParams.get('timeout') || 0, 30000);

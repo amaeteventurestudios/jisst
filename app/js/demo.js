@@ -2,6 +2,7 @@
 // its agents are the real ones (app/agents/), answering from example race results and example feed posts.
 import { AGENTS, byId, answer } from '../agents/index.js';
 import { extras, tally, POLL, preview, contactContent, pollContent, locationContent } from './content.js';
+import { encodeRecoveryKey, decodeRecoveryKey } from './crypto.js';
 
 const H = 3600e3, M = 60e3, D = 24 * H;
 const EXAMPLE_TEAMS = [['Harmattan Racing', 25, 1], ['Lagoon Dynamics', 18, 2], ['Kilimanjaro Motorsport', 15, 3], ['Volta Speed', 12, 4], ['Northern Lights GP', 10, 5]];
@@ -36,7 +37,7 @@ export function demoEngine({ name = 'You' } = {}) {
   const rooms = new Map(), subs = new Set(), reminders = [];
   let starred = [];
   const blocked = new Set(), muted = new Set();
-  let privacy = { lastSeen: true, readTicks: true };
+  let privacy = { lastSeen: true, readTicks: true }, backupKey = '';
   let n = 0;
   const changed = () => { for (const f of subs) f(); };
   const ev = (sender, text, ago, extra = {}) => ({ id: 'e' + n++, sender, text, ts: t0 - ago, ...extra });
@@ -191,6 +192,10 @@ export function demoEngine({ name = 'You' } = {}) {
       ['Tunde Bakare', 'Zainab Musa', 'Mum'].forEach((nm, k) => setTimeout(() => { seenBy.set(item.id, [...(seenBy.get(item.id) || []), nm]); changed(); }, 2500 + k * 2000));
     },
     seeStatus(roomId, id) { for (const list of status.values()) for (const x of list) if (x.id === id && !x.seen) { x.seen = true; changed(); } },
+    // chat backup: the demo makes a real-looking recovery key but keeps nothing
+    backup: async () => (backupKey ? 'on' : 'off'),
+    async makeRecovery() { const k = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/=+$/, ''); backupKey = encodeRecoveryKey(k); return backupKey; },
+    async restore(text) { decodeRecoveryKey(text); return 0; },
     privacy: () => ({ ...privacy }),
     async setPrivacy(p) { privacy = { ...privacy, ...p }; changed(); },
     // agents are always online; people in the demo were seen a little while ago

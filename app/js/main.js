@@ -344,6 +344,18 @@ function drawStory() {
   else story.t = setTimeout(() => stepStory(1), matchMedia('(prefers-reduced-motion: reduce)').matches ? 8000 : 5000);
 }
 
+// ---------- chat backup ----------
+async function openBackup() {
+  const st = await S.engine.backup().catch(() => 'off');
+  if (st === 'none') return sheet(html`<div class="picker"><h3>Chat backup</h3><p class="fine">Private chats need a newer browser, so there is nothing to back up here.</p></div>`, 'Chat backup');
+  if (st === 'locked') return sheet(html`<form class="picker" data-form="restore"><h3>Enter your recovery key</h3><p class="fine">Your chats are backed up. Enter the recovery key you saved to read your older private messages on this phone.</p>
+    <div class="field"><label for="rk">Recovery key</label><input id="rk" name="key" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="EsT… …" required></div>
+    <button class="btn">Unlock my messages</button><p class="fine">Lost it? <button type="button" class="linkbtn" data-act="backup-make" data-again="1">Make a new key</button> (older messages on new phones stay locked).</p></form>`, 'Chat backup');
+  sheet(html`<div class="picker"><h3>Chat backup</h3>${st === 'on'
+    ? html`<p class="fine">On. The keys to your private chats are backed up, locked with your recovery key. The server keeps them but can't read them.</p><button type="button" class="btn ghost" data-act="backup-make" data-again="1">Make a new recovery key</button>`
+    : html`<p class="fine">Keep a locked copy of your private chat keys on the server, so a new phone can read your old messages. Only your recovery key opens it.</p><button type="button" class="btn" data-act="backup-make">Turn on and make my recovery key</button>`}</div>`, 'Chat backup');
+}
+
 // ---------- communities ----------
 function commRoomRow(id, announce) {
   const r = S.engine.room(id); if (!r) return '';
@@ -451,6 +463,7 @@ function tabYou() {
     <button class="set" data-act="rename">${icon('pencil')}<span class="mid">Edit your name</span></button>
     <button class="set" data-act="starred">${icon('star')}<span class="mid">Starred messages</span></button>
     <button class="set" data-act="blocked">${icon('block')}<span class="mid">Blocked people</span></button>
+    <button class="set" data-act="backup">${icon('key')}<span class="mid">Chat backup<small>A recovery key lets a new phone read your old private messages</small></span></button>
     ${standalone ? '' : html`<button class="set" data-act="install">${icon('download')}<span class="mid">Install ${BRAND.name}<small>${ios ? 'In Safari: Share, then Add to Home Screen' : 'Put it on your home screen like any app'}</small></span></button>`}
     <div class="set">${icon('clock')}<span class="mid">Last seen and online<small>Off: nobody sees when you're on, and you don't see theirs</small></span><button class="switch" role="switch" aria-checked="${S.engine.privacy().lastSeen}" aria-label="Last seen and online" data-act="priv-seen"></button></div>
     <div class="set">${icon('ticks')}<span class="mid">Read ticks<small>Off: people don't see when you've read, and you don't see theirs</small></span><button class="switch" role="switch" aria-checked="${S.engine.privacy().readTicks}" aria-label="Read ticks" data-act="priv-ticks"></button></div>
@@ -628,6 +641,11 @@ document.addEventListener('submit', (e) => {
     if (!q || opts.length < 2) return toast('A poll needs a question and at least two options.');
     closeSheet(); S.engine.sendPoll(S.room, q, opts).catch((err) => toast(err.message)); return;
   }
+  if (f.dataset.form === 'restore') {
+    e.preventDefault(); const b = f.querySelector('button.btn'); b.disabled = true;
+    S.engine.restore(f.key.value).then((n) => { closeSheet(); toast(n ? 'Done. Your older private messages are back.' : 'Done. Backup is on.'); main(); })
+      .catch((err) => { b.disabled = false; toast(err.message); }); return;
+  }
   if (f.dataset.form === 'status') {
     e.preventDefault(); const text = f.text.value.trim(); if (!text) return toast('Type something, or pick a photo.');
     closeSheet(); S.engine.postStatus({ text, bg: f.bg.value }).then(() => toast('Status posted')).catch((err) => toast(err.message)); return;
@@ -768,6 +786,16 @@ document.addEventListener('click', async (e) => {
     case 'restart': return welcome('start');
     case 'new': history.pushState({ jisst: 'view' }, ''); S.view = 'new'; S.q = ''; S.room = innerWidth < 900 ? null : S.room; return side();
     case 'group': S.view = 'group'; S.newComm = false; S.q = ''; S.pick = []; return side();
+    case 'backup': return openBackup();
+    case 'backup-make': {
+      if (t.dataset.again && !confirm('Make a new recovery key? The old key will stop working.')) return;
+      t.disabled = true;
+      try { const key = await S.engine.makeRecovery(); sheet(html`<div class="picker"><h3>Your recovery key</h3><p class="fine">Write it down or keep it in your password manager. It is the only way to read your old private messages on a new phone. ${BRAND.name} can't see it and can't send it to you again.</p>
+        <p class="reckey" id="reckey">${key}</p><div class="row2"><button type="button" class="btn ghost" data-act="backup-copy">${icon('copy')} Copy</button><button type="button" class="btn" data-act="sheet-close">I saved it</button></div></div>`, 'Recovery key'); }
+      catch (err) { toast(err.message); t.disabled = false; }
+      return;
+    }
+    case 'backup-copy': navigator.clipboard?.writeText($('#reckey').textContent).then(() => toast('Copied'), () => toast('Copy it by hand')); return;
     case 'status-new': if (story) closeStory(); return openStatusForm();
     case 'story-close': return closeStory();
     case 'story-next': return stepStory(1);
