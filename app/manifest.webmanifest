@@ -1,0 +1,19 @@
+{
+  "name": "Jisste",
+  "short_name": "Jisste",
+  "description": "Chat with your friends, your family and as many AI agents as you like.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F4F2FB",
+  "theme_color": "#5B3DF5",
+  "categories": ["social", "games"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
