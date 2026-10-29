@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fakeHomeserver } from '../../tools/fake-hs.mjs';
-import { gateway } from '../server.mjs';
+import { gateway, callTicket } from '../server.mjs';
 import { config } from '../lib/config.mjs';
 import { encrypt, decrypt, vapidHeader, vapidKeys } from '../lib/webpush.mjs';
 
@@ -34,7 +34,7 @@ test.before(async () => {
     res.statusCode = 404; res.end('{}');
   });
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jisst-'));
-  const cfg = config({ JISST_DATA: dir, JISST_PORT: '0', JISST_HS_URL: hs.url, JISST_REGISTRATION_TOKEN: 'tok', JISST_DEV_SIGNIN: '1', JISST_INSECURE_COOKIES: '1', JISST_AGP_URL: agp.url, JISST_FEED_URL: net.url, JISST_PUBLIC_URL: 'http://localhost' });
+  const cfg = config({ JISST_DATA: dir, JISST_PORT: '0', JISST_HS_URL: hs.url, JISST_REGISTRATION_TOKEN: 'tok', JISST_DEV_SIGNIN: '1', JISST_INSECURE_COOKIES: '1', JISST_AGP_URL: agp.url, JISST_FEED_URL: net.url, JISST_PUBLIC_URL: 'http://localhost', JISST_LIVEKIT_SECRET: 'call-secret' });
   gw = gateway(cfg);
   await new Promise((ok) => gw.server.listen(0, '127.0.0.1', ok));
   cfg.port = gw.server.address().port;
@@ -158,4 +158,19 @@ test('web push encryption round-trips and the VAPID signature verifies', () => {
   const key = crypto.createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: pub.subarray(1, 33).toString('base64url'), y: pub.subarray(33).toString('base64url') }, format: 'jwk' });
   assert.ok(crypto.verify('sha256', Buffer.from(`${hd}.${bd}`), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(sg, 'base64url')));
   assert.equal(JSON.parse(Buffer.from(bd, 'base64url')).aud, 'https://push.example');
+});
+
+test('call tickets: only for people in the chat, signed for the call server', async () => {
+  const room = await mx(ada, 'POST', '/_matrix/client/v3/createRoom', { name: 'Call test', invite: [] });
+  const ok = await post('/api/calls/token', { room: room.room_id, token: ada.chat.access_token });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.url, 'ws://localhost/livekit');
+  const [h, c, sig] = ok.body.token.split('.');
+  assert.equal(crypto.createHmac('sha256', 'call-secret').update(`${h}.${c}`).digest('base64url'), sig);
+  const claims = JSON.parse(Buffer.from(c, 'base64url').toString());
+  assert.equal(claims.sub, ada.chat.user_id);
+  assert.equal(claims.video.roomJoin, true);
+  assert.equal(claims.video.room, JSON.parse(Buffer.from(callTicket({ key: 'jisst', secret: 'x' }, room.room_id, 'a', 'b').split('.')[1], 'base64url').toString()).video.room);
+  assert.equal((await post('/api/calls/token', { room: room.room_id, token: tunde.chat.access_token })).status, 403, 'not in the chat');
+  assert.equal((await post('/api/calls/token', { room: room.room_id, token: 'nonsense' })).status, 401);
 });

@@ -5,6 +5,7 @@ import { matrixEngine } from './matrix.js';
 import { demoEngine, EXAMPLE_FEED } from './demo.js';
 import { AGENTS, SOON } from '../agents/index.js';
 import { BRAND, html, raw, esc, icon, avatar, when, hhmm, dayLabel, ago, linkify, toast, store } from './ui.js';
+import { calls, callBubble, callStates } from './calls.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const app = $('#app');
@@ -21,6 +22,7 @@ function learnAgents(list) {
   for (const a of [...(list.agents || []), ...(list.community || [])]) if (a.mxid) agentMeta.set(a.mxid, a);
 }
 const agentOf = (mxid) => agentMeta.get(mxid) || null;
+const CALLS = calls({ getEngine: () => S.engine, isDemo: () => S.demo, roomInfo: (id) => S.engine.room(id) });
 
 // ---------- start ----------
 async function boot() {
@@ -39,7 +41,7 @@ async function boot() {
 
 function startLive(chat, fresh = false) {
   S.demo = false;
-  S.engine = matrixEngine({ homeserver: chat.homeserver || location.origin, user_id: chat.user_id, access_token: chat.access_token }, { agents: agentMeta }).start();
+  S.engine = matrixEngine({ homeserver: chat.homeserver || location.origin, user_id: chat.user_id, access_token: chat.access_token, device_id: chat.device_id }, { agents: agentMeta }).start();
   S.engine.me.name = store.get('me')?.name || '';
   S.engine.onchange((e) => { if (e?.signedOut) { store.set('chat', null); toast('Please sign in again.'); return welcome(); } update(); });
   shell();
@@ -55,7 +57,7 @@ function greet(tries = 40) {
   if (helper && !S.engine.rooms().length) S.engine.openDirect(helper.mxid).then((id) => { if (!S.room && !S.view) openSoon(id); }).catch(() => {});
 }
 // the chat list may still be loading when an alert opens a chat: wait for that room to arrive
-function openSoon(id, tries = 40) { if (S.engine?.room(id)) return openRoom(id); if (tries > 0) setTimeout(() => openSoon(id, tries - 1), 250); }
+function openSoon(id, then, tries = 40) { if (S.engine?.room(id)) { openRoom(id); return then?.(); } if (tries > 0) setTimeout(() => openSoon(id, then, tries - 1), 250); }
 navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.jisst === 'open' && e.data.room && S.engine) { S.view = null; openSoon(e.data.room); } });
 function startDemo(name) {
   S.demo = true;
@@ -140,6 +142,27 @@ function update() {
   if (!S.engine || !$('#shell')) return;
   side(true);
   if (S.room) chatUpdate();
+  ringCheck();
+}
+// ---------- a call is ringing in one of your chats ----------
+const rung = new Set();
+function ringCheck() {
+  if (CALLS.active() || $('.ring')) return;
+  for (const r of S.engine.rooms()) {
+    const tl = S.engine.timeline(r.id), live = callStates(tl).live;
+    const m = [...tl].reverse().find((x) => x.call && !x.mine && x.call.state === 'started' && Date.now() - x.ts < 45e3 && live(x) && !rung.has(x.call.id));
+    if (!m) continue;
+    rung.add(m.call.id);
+    const el = document.createElement('div');
+    el.className = 'ring'; el.setAttribute('role', 'alertdialog'); el.setAttribute('aria-label', 'Incoming call');
+    el.innerHTML = String(html`${avatar({ id: r.other || r.id, name: r.name, group: !r.dm })}<div class="rt"><b>${r.dm ? m.senderName : r.name}</b><small>${m.call.video ? 'Video call' : 'Voice call'}${r.dm ? '' : ' · ' + m.senderName.split(' ')[0]}</small></div>
+      <button type="button" class="no" data-ring="no" aria-label="Decline">${icon('hangup')}</button><button type="button" class="yes" data-ring="yes" aria-label="Answer">${icon(m.call.video ? 'video' : 'calls')}</button>`);
+    el.dataset.room = r.id; el.dataset.mid = m.id;
+    document.body.append(el);
+    setTimeout(() => el.remove(), Math.max(1000, 45e3 - (Date.now() - m.ts)));
+    if (document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') try { new Notification(r.name, { body: 'Incoming call', tag: m.call.id, icon: 'icons/icon-192.png' }); } catch {}
+    return;
+  }
 }
 function setTabs() { const t = tabs(); $('#railtabs').innerHTML = String(t); $('#tabbar').innerHTML = String(t); $('#tabbar').hidden = !!S.room && innerWidth < 900 || !!S.view; }
 
@@ -159,16 +182,19 @@ function top(title, { back = false, actions = '', brand = false } = {}) {
   return html`<header class="top">${back ? html`<button class="iconbtn" data-act="back" aria-label="Back">${icon('back')}</button>` : ''}<h1 class="${brand ? 'brand' : ''}">${title}</h1>${actions}</header>`;
 }
 
+const FILTERS = [['all', 'All'], ['unread', 'Unread'], ['fav', 'Favorites'], ['groups', 'Groups'], ['agents', 'Agents']];
+const FILTER_TEST = { all: () => true, unread: (r) => r.unread > 0, fav: (r) => r.favorite, groups: (r) => !r.dm, agents: (r) => !!r.agentId };
 function chatRows() {
-  const q = S.q.toLowerCase();
-  const rooms = S.engine.rooms().filter((r) => !q || r.name.toLowerCase().includes(q));
+  const q = S.q.toLowerCase(), f = S.filter || 'all';
+  const rooms = S.engine.rooms().filter((r) => (!q || r.name.toLowerCase().includes(q)) && FILTER_TEST[f](r));
+  if (!rooms.length && f !== 'all' && !q) return html`<div class="empty"><p>${f === 'unread' ? "You're all caught up." : f === 'fav' ? 'No favorites yet. Open a chat, tap its name, then Add to favorites.' : f === 'groups' ? 'No groups yet.' : 'No agents yet. Add one from the Agents tab.'}</p></div>`;
   if (!rooms.length) return q ? html`<div class="empty"><p>No chats match "${S.q}".</p></div>` : html`<div class="empty"><div class="big">${icon('chats')}</div><h2>No chats yet</h2><p>Start one with the pencil button, or add an agent from the Agents tab.</p></div>`;
   return html`${rooms.map((r) => {
     const ag = r.agentId ? agentOf(r.other) : null, l = r.last;
     const prev = r.typing.length ? html`<span class="prev typing">${r.dm ? 'typing…' : r.typing[0] + ' is typing…'}</span>`
       : l ? html`<span class="prev">${l.mine && !l.notice ? ticks(l.status) : ''}${!r.dm && !l.mine && !l.notice ? l.sender.split(' ')[0] + ': ' : ''}${l.text}</span>` : html`<span class="prev">No messages yet</span>`;
     return html`<button class="row" data-room="${r.id}" aria-current="${S.room === r.id}">${avatar({ id: r.other || r.id, name: r.name, agent: ag, group: !r.dm })}
-      <span class="mid"><span class="l1"><span class="name">${r.name}</span>${ag ? html`<span class="tag">Agent</span>` : ''}<span class="time ${r.unread ? 'new' : ''}">${r.ts ? when(r.ts) : ''}</span></span>
+      <span class="mid"><span class="l1"><span class="name">${r.name}</span>${r.favorite ? html`<span class="favt" aria-label="Favorite">${icon('star')}</span>` : ''}${ag ? html`<span class="tag">Agent</span>` : ''}<span class="time ${r.unread ? 'new' : ''}">${r.ts ? when(r.ts) : ''}</span></span>
       <span class="l2">${prev}${r.unread ? html`<span class="badge">${r.unread}</span>` : ''}</span></span></button>`;
   })}`;
 }
@@ -177,6 +203,7 @@ const ticks = (st) => html`<span class="ticks ${st === 'read' ? 'read' : ''}" ar
 function tabChats() {
   return html`${top(BRAND.name, { brand: true, actions: html`<button class="iconbtn" data-act="new" aria-label="New chat">${icon('pencil')}</button>` })}
     <label class="search">${icon('search')}<input id="q" placeholder="Search chats" value="${S.q}" autocomplete="off"></label>
+    <div class="chips filters">${FILTERS.map(([id, label]) => html`<button class="chip" data-filter="${id}" aria-pressed="${(S.filter || 'all') === id}">${label}</button>`)}</div>
     <div class="sidebody"><div class="scroll" id="chatlist">${chatRows()}</div><button class="fab" data-act="new" aria-label="New chat">${icon('plus')}</button></div>`;
 }
 
@@ -223,17 +250,17 @@ async function searchPeople() {
   const pl = $('#plist'); if (pl) pl.innerHTML = String(peopleList(S.view === 'group' ? 'pick' : 'person'));
 }
 async function openWith(mxid) {
-  try { const id = await S.engine.openDirect(mxid); S.view = null; S.q = ''; openRoom(id); }
+  try { const id = await S.engine.openDirect(mxid); S.view = null; S.q = ''; openSoon(id); }
   catch (e) { toast(e.message); }
 }
 async function makeGroup(name) {
-  try { const id = await S.engine.createGroup(name.trim(), S.pick.map((p) => p.mxid)); S.pick = []; S.view = null; S.q = ''; S.tab = 'chats'; openRoom(id); }
+  try { const id = await S.engine.createGroup(name.trim(), S.pick.map((p) => p.mxid)); S.pick = []; S.view = null; S.q = ''; S.tab = 'chats'; openSoon(id); }
   catch (e) { toast(e.message); }
 }
 async function addMembers() {
   const id = S.addTo; S.addTo = null;
   for (const p of S.pick) await S.engine.invite(id, p.mxid).catch((e) => toast(e.message));
-  S.pick = []; S.view = null; S.infoFor = null; openRoom(id);
+  S.pick = []; S.view = null; S.infoFor = null; openSoon(id);
 }
 
 // ---------- chat info ----------
@@ -245,6 +272,7 @@ function viewInfo() {
     ${ag ? html`<div class="pad"><div class="note">${ag.about}</div>${ag.commands?.length ? html`<div class="section" style="padding-left:0">Try saying</div><div class="btns">${ag.commands.map((c) => html`<button data-say="${c.replace(/ <[^>]+>| …/g, '')}">${c}</button>`)}</div>` : ''}</div>` : ''}
     ${!r.dm ? html`<div class="section">Members</div>${r.members.map((m) => html`<div class="row">${avatar({ id: m.id, name: m.name, agent: agentOf(m.id), size: 'sm' })}<span class="mid"><span class="l1"><span class="name">${m.id === S.engine.me.user_id ? 'You' : m.name}</span>${agentOf(m.id) ? html`<span class="tag">Agent</span>` : ''}</span></span></div>`)}
       <button class="set" data-act="add-member">${icon('plus')}<span class="mid">Add people or agents</span></button>` : ''}
+    <button class="set" data-act="fav">${icon('star')}<span class="mid">${r.favorite ? 'Remove from favorites' : 'Add to favorites'}</span></button>
     <button class="set" data-act="leave" style="color:var(--danger)">${icon('out')}<span class="mid">${r.dm ? 'Delete chat' : 'Leave group'}</span></button></div>`;
 }
 
@@ -337,19 +365,23 @@ let rec = null;
 function main() {
   const el = $('#main'); if (!el) return;
   if (!S.room) { el.innerHTML = String(html`<div class="placeholder"><div><div class="mark">J</div><h2>${BRAND.name}</h2><p>Pick a chat, or start one with the pencil button.</p></div></div>`); return; }
-  el.innerHTML = String(html`<div class="chat" id="chat"><header class="top" id="chathead"></header><div class="wall" id="wall" role="log" aria-label="Messages"></div>
-    <form class="composer" id="composer" data-form="send"><div class="box"><textarea id="msg" rows="1" placeholder="Message" aria-label="Message" enterkeyhint="send"></textarea>
+  el.innerHTML = String(html`<div class="chat" id="chat"><header class="top" id="chathead"></header>
+    <div class="findbar" id="findbar" hidden><div class="fb"><label class="search">${icon('search')}<input id="findq" placeholder="Search this chat" autocomplete="off"></label><button type="button" class="iconbtn" data-act="find-close" aria-label="Close search">${icon('close')}</button></div><div class="hits" id="hits"></div></div>
+    <div class="wall" id="wall" role="log" aria-label="Messages"></div>
+    <form class="composer" id="composer" data-form="send"><div class="box"><button type="button" class="iconbtn" data-act="emoji" aria-label="Emoji" title="Emoji">${icon('smile')}</button><textarea id="msg" rows="1" placeholder="Message" aria-label="Message" enterkeyhint="send"></textarea>
     <label class="iconbtn" aria-label="Send a photo" title="Send a photo">${icon('camera')}<input type="file" accept="image/*" id="photo" hidden></label></div>
     <button type="button" class="send" id="sendbtn" aria-label="Record a voice message">${icon('mic')}</button></form></div>`);
   chatUpdate(true);
   const ta = $('#msg');
-  if (innerWidth >= 900) ta.focus();
+  if (innerWidth >= 900) ta?.focus();
 }
 function chatHead(r) {
   const ag = r.agentId ? agentOf(r.other) : null;
-  const sub = r.typing.length ? html`<small class="typing">${r.dm ? 'typing…' : r.typing[0] + ' is typing…'}</small>` : html`<small>${ag ? `Agent · ${ag.kind}` : r.dm ? (S.demo ? 'online' : 'tap for info') : r.members.map((m) => (m.id === S.engine.me.user_id ? 'You' : m.name.split(' ')[0])).join(', ')}</small>`;
+  const sub = r.typing.length ? html`<small class="typing">${r.dm ? 'typing…' : r.typing[0] + ' is typing…'}</small>` : html`<small>${r.encrypted ? html`<span class="lockt">${icon('lock')}</span>` : ''}${ag ? `Agent · ${ag.kind}` : r.dm ? (r.encrypted ? 'Private chat' : 'tap for info') : r.members.map((m) => (m.id === S.engine.me.user_id ? 'You' : m.name.split(' ')[0])).join(', ')}</small>`;
   return html`<button class="iconbtn" data-act="close-chat" aria-label="Back to chats">${icon('back')}</button>
     <button class="who" data-act="info">${avatar({ id: r.other || r.id, name: r.name, agent: ag, group: !r.dm, size: 'sm' })}<span class="t"><b>${r.name}</b>${sub}</span></button>
+    ${r.agentId ? '' : html`<button class="iconbtn" data-act="call-voice" aria-label="Voice call" title="Voice call">${icon('calls')}</button><button class="iconbtn" data-act="call-video" aria-label="Video call" title="Video call">${icon('video')}</button>`}
+    <button class="iconbtn" data-act="find" aria-label="Search this chat" title="Search this chat">${icon('search')}</button>
     <button class="iconbtn" data-act="info" aria-label="Chat info">${icon('more')}</button>`;
 }
 function bubble(m, prev, r) {
@@ -364,7 +396,9 @@ function bubble(m, prev, r) {
   const c = m.card;
   const cardHtml = c && (c.title || c.lines?.length || c.fields?.length) ? html`<div class="card">${c.title ? html`<div class="ct">${c.title}</div>` : ''}${c.lines?.length ? html`<ul class="cl">${c.lines.map((l) => html`<li>${l}</li>`)}</ul>` : ''}${c.fields?.length ? html`<dl>${c.fields.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>` : ''}</div>` : '';
   const buttons = c && (c.buttons?.length || c.link) ? html`<div class="btns ${(c.buttons?.length || 0) + (c.link ? 1 : 0) >= 4 ? 'two' : ''}">${(c.buttons || []).map((b) => html`<button type="button" data-say="${b.say}">${b.label}</button>`)}${c.link ? (c.link.url === '#feed' ? html`<button type="button" data-tab="feed">${c.link.label}</button>` : html`<a href="${c.link.url}" target="_blank" rel="noopener">${icon('link')}${c.link.label}</a>`) : ''}</div>` : '';
-  return html`<div class="msg ${m.mine ? 'mine' : ''} ${first ? 'first' : ''}"><div class="bubble">${from}${content}${cardHtml}</div>${buttons}</div>`;
+  const reacts = m.reactions?.length ? html`<div class="reacts">${m.reactions.map((x) => html`<button type="button" class="react ${x.mine ? 'on' : ''}" data-react="${x.key}" data-mid="${m.id}" title="${x.names.filter(Boolean).join(', ')}">${x.key}${x.count > 1 ? html`<b>${x.count}</b>` : ''}</button>`)}</div>` : '';
+  const more = m.deleted || m.status === 'sending' ? '' : html`<button type="button" class="msgmore" data-msgmenu="${m.id}" aria-label="React or more">${icon('smile')}</button>`;
+  return html`<div class="msg ${m.mine ? 'mine' : ''} ${first ? 'first' : ''} ${m.deleted ? 'deleted' : ''}" data-mid="${m.id}"><div class="bubble">${from}${m.call ? callBubble(m, S.callLive?.(m)) : content}${cardHtml}</div>${more}${reacts}${buttons}</div>`;
 }
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 function chatUpdate(initial = false) {
@@ -373,8 +407,11 @@ function chatUpdate(initial = false) {
   $('#chathead').innerHTML = String(chatHead(r));
   const wall = $('#wall'), near = initial || wall.scrollHeight - wall.scrollTop - wall.clientHeight < 120;
   const msgs = S.engine.timeline(S.room);
+  S.callLive = callStates(msgs).live;
   let out = [], lastDay = '';
-  out.push(r.agentId ? html`<div class="safe">${agentOf(r.other)?.name || 'This agent'} is an AI agent. It answers from its own sources, and it only sees this chat.</div>` : html`<div class="safe">${icon('lock')} Messages are kept on ${BRAND.name}'s server so your chats follow you to any phone.</div>`);
+  out.push(r.agentId ? html`<div class="safe">${agentOf(r.other)?.name || 'This agent'} is an AI agent. It reads this chat to answer you, and only this chat.</div>`
+    : r.encrypted ? html`<div class="safe">${icon('lock')} Messages in this chat are private. Only the people in it can read them, not even ${BRAND.name}.</div>`
+    : html`<div class="safe">This group has an agent in it, so it isn't private: the agent reads messages here.</div>`);
   msgs.forEach((m, i) => {
     const d = dayLabel(m.ts); if (d !== lastDay) { out.push(html`<div class="day">${d}</div>`); lastDay = d; }
     out.push(m.kind === 'notice' ? html`<div class="notice">${m.text}</div>` : bubble(m, msgs[i - 1], r));
@@ -437,6 +474,7 @@ document.addEventListener('submit', (e) => {
 document.addEventListener('input', (e) => {
   if (e.target.id === 'q') { S.q = e.target.value; $('#chatlist').innerHTML = String(chatRows()); }
   if (e.target.id === 'pq') { S.q = e.target.value; const pl = $('#plist'); if (pl) pl.innerHTML = String(peopleList(S.view === 'group' ? 'pick' : 'person')); clearTimeout(searchPeople.t); searchPeople.t = setTimeout(searchPeople, 250); }
+  if (e.target.id === 'findq') runFind(e.target.value);
   if (e.target.id === 'msg') {
     const ta = e.target; ta.style.height = ''; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; composerState();
     if (Date.now() - typingT > 4000) { typingT = Date.now(); S.engine.typing(S.room, true); }
@@ -473,7 +511,23 @@ document.addEventListener('click', async (e) => {
   if (d.pick) { const i = S.pick.findIndex((p) => p.mxid === d.pick); if (i >= 0) S.pick.splice(i, 1); else S.pick.push({ mxid: d.pick, name: d.name }); const nm = $('#gn')?.value; side(); if (nm) $('#gn').value = nm; return; }
   if (d.voice !== undefined) return playVoice(t);
   if (d.theme) { store.set('theme', d.theme); applyTheme(d.theme); return side(); }
+  if (d.call) return CALLS.control(d.call);
+  if (d.filter) { S.filter = d.filter; for (const c of document.querySelectorAll('[data-filter]')) c.setAttribute('aria-pressed', String(c.dataset.filter === d.filter)); $('#chatlist').innerHTML = String(chatRows()); return; }
+  if (d.ring) { const box = t.closest('.ring'); box.remove(); if (d.ring === 'yes') { const m = S.engine.timeline(box.dataset.room).find((x) => x.id === box.dataset.mid); if (m) { if (S.room !== box.dataset.room) openRoom(box.dataset.room); CALLS.join(box.dataset.room, m.call); } } return; }
+  if (d.joincall) { const m = S.engine.timeline(S.room).find((x) => x.id === d.joincall); if (m?.call) CALLS.join(S.room, m.call); return; }
+  if (d.react && d.mid) { closeSheet(); return S.engine.react(S.room, d.mid, d.react).catch((err) => toast(err.message)); }
+  if (d.msgmenu) return openSheet(d.msgmenu);
+  if (d.hit) { closeFind(false); return flash(d.hit); }
   switch (d.act) {
+    case 'fav': { const id = S.infoFor || S.room, r = S.engine.room(id); await S.engine.setFavorite(id, !r.favorite).catch((err) => toast(err.message)); return side(); }
+    case 'call-voice': case 'call-video': return CALLS.start(S.room, d.act === 'call-video');
+    case 'find': return openFind();
+    case 'find-close': return closeFind(true);
+    case 'emoji': return toggleEmoji();
+    case 'sheet-close': return closeSheet();
+    case 'more-emoji': return sheetPicker();
+    case 'msg-copy': { const m = sheetMsg(); closeSheet(); try { await navigator.clipboard.writeText(m?.text || ''); toast('Copied'); } catch { toast("Couldn't copy here."); } return; }
+    case 'msg-delete': { const m = sheetMsg(); closeSheet(); if (m) S.engine.remove(S.room, m.id).catch((err) => toast(err.message)); return; }
     case 'try-demo': S.demo = true; return welcome();
     case 'leave-demo': store.set('demoName', null); S.engine?.stop(); S.room = null; S.tab = 'chats'; return S.gateway ? (S.demo = false, welcome()) : welcome();
     case 'restart': return welcome('start');
@@ -501,7 +555,73 @@ document.addEventListener('click', async (e) => {
   }
   if (t.id === 'sendbtn') { if (t.dataset.mode === 'send') $('#composer').requestSubmit(); else startRecording(); }
 });
-async function sendPrivacyDemo() { const id = await S.engine.openDirect(S.engine.agentMxid('jisst')); openRoom(id); sendText('privacy'); }
+// ---------- message menu: react, copy, delete ----------
+const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+let sheetFor = null;
+const sheetMsg = () => S.engine.timeline(S.room).find((m) => m.id === sheetFor);
+function openSheet(mid) {
+  closeSheet(); sheetFor = mid;
+  const m = sheetMsg(); if (!m || m.deleted) return;
+  const el = document.createElement('div');
+  el.className = 'sheet'; el.id = 'sheet';
+  el.innerHTML = String(html`<button type="button" class="scrim" data-act="sheet-close" aria-label="Close"></button><div class="panel" role="dialog" aria-label="Message">
+    <div class="quick">${QUICK.map((e) => html`<button type="button" data-react="${e}" data-mid="${mid}" aria-label="React ${e}">${e}</button>`)}<button type="button" data-act="more-emoji" aria-label="More emoji">${icon('plus')}</button></div>
+    <div class="pick" id="sheetpick"></div>
+    ${m.text && !m.call ? html`<button type="button" class="set" data-act="msg-copy">${icon('copy')}<span class="mid">Copy</span></button>` : ''}
+    ${m.mine ? html`<button type="button" class="set" data-act="msg-delete" style="color:var(--danger)">${icon('trash')}<span class="mid">Delete for everyone</span></button>` : ''}</div>`);
+  document.body.append(el);
+}
+function closeSheet() { $('#sheet')?.remove(); sheetFor = null; }
+let pickerLoaded = null;
+async function picker(onPick) {
+  pickerLoaded ||= import('../vendor/emoji-picker/index.js');
+  await pickerLoaded;
+  const p = document.createElement('emoji-picker');
+  p.dataSource = new URL('../vendor/emoji-picker/data.json', import.meta.url).href;
+  p.classList.add(document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light');
+  p.addEventListener('emoji-click', (e) => onPick(e.detail.unicode));
+  return p;
+}
+async function sheetPicker() {
+  const box = $('#sheetpick'); if (!box || box.firstChild) return;
+  const mid = sheetFor;
+  box.append(await picker((u) => { closeSheet(); S.engine.react(S.room, mid, u).catch((err) => toast(err.message)); }));
+}
+async function toggleEmoji() {
+  const open = $('#emojipop'); if (open) return open.remove();
+  const pop = document.createElement('div'); pop.id = 'emojipop'; pop.className = 'emojipop';
+  $('#chat').append(pop);
+  pop.append(await picker((u) => { const ta = $('#msg'); if (!ta) return; const at = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, at) + u + ta.value.slice(ta.selectionEnd ?? at); ta.selectionStart = ta.selectionEnd = at + u.length; composerState(); }));
+}
+// the emoji popover closes on a tap outside it or on Escape
+document.addEventListener('pointerdown', (e) => { const pop = $('#emojipop'); if (pop && !pop.contains(e.target) && !e.target.closest('[data-act="emoji"]')) pop.remove(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#emojipop')?.remove(); });
+// long-press a message on a phone, or right-click on a computer
+let pressT = 0;
+document.addEventListener('pointerdown', (e) => {
+  const msg = e.target.closest('.msg[data-mid]'); if (!msg || e.pointerType === 'mouse' || e.target.closest('button, a')) return;
+  clearTimeout(pressT); pressT = setTimeout(() => { navigator.vibrate?.(15); openSheet(msg.dataset.mid); }, 480);
+});
+for (const ev of ['pointerup', 'pointercancel', 'pointermove']) document.addEventListener(ev, (e) => { if (ev !== 'pointermove' || Math.abs(e.movementY) + Math.abs(e.movementX) > 6) clearTimeout(pressT); });
+document.addEventListener('contextmenu', (e) => { const msg = e.target.closest('.msg[data-mid]'); if (msg && !e.target.closest('a')) { e.preventDefault(); openSheet(msg.dataset.mid); } });
+document.addEventListener('dblclick', (e) => { const msg = e.target.closest('.msg[data-mid]'); if (msg && !e.target.closest('button, a')) S.engine.react(S.room, msg.dataset.mid, '❤️').catch(() => {}); });
+
+// ---------- search inside a chat (MiniSearch, on the phone: private chats can't be searched on the server) ----------
+let MS = null;
+async function openFind() { const f = $('#findbar'); if (!f) return; f.hidden = false; $('#findq').focus(); if (!MS) { MS = (await import('../vendor/minisearch/index.js')).default; runFind($('#findq')?.value || ''); } }
+function closeFind(clear) { const f = $('#findbar'); if (!f) return; f.hidden = true; if (clear) { $('#findq').value = ''; $('#hits').innerHTML = ''; } }
+function runFind(q) {
+  const hits = $('#hits'); if (!hits) return;
+  if (!MS || q.trim().length < 2) { hits.innerHTML = ''; return; }
+  const msgs = S.engine.timeline(S.room).filter((m) => m.text && m.kind !== 'notice' && !m.deleted && !m.waiting);
+  const ms = new MS({ fields: ['text', 'senderName'], storeFields: ['id'], searchOptions: { prefix: true, fuzzy: 0.2, boost: { text: 2 } } });
+  ms.addAll(msgs.map((m) => ({ id: m.id, text: m.text, senderName: m.senderName })));
+  const found = ms.search(q).slice(0, 30).map((h) => msgs.find((m) => m.id === h.id)).filter(Boolean);
+  hits.innerHTML = found.length ? String(html`${found.map((m) => html`<button type="button" class="hit" data-hit="${m.id}"><b>${m.mine ? 'You' : m.senderName}</b> <span>${m.text.slice(0, 120)}</span><small>${when(m.ts)}</small></button>`)}`) : String(html`<p class="nohit">Nothing found in the messages loaded on this phone.</p>`);
+}
+function flash(mid) { const el = $(`.msg[data-mid="${CSS.escape(mid)}"]`); if (!el) return; el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
+
+async function sendPrivacyDemo() { const id = await S.engine.openDirect(S.engine.agentMxid('jisst')); openSoon(id, () => sendText('privacy')); }
 function back() {
   if (S.view) { const was = S.view; S.view = null; S.addTo = null; if (was === 'info' && S.infoFor) { S.room = S.infoFor; S.infoFor = null; side(); return main(); } return side(); }
   if (S.room) return closeRoom();

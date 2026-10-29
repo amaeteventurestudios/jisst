@@ -15,6 +15,7 @@
 //   POST /api/dev/agents {name, about}     make your own agent; answers with its chat key, once
 //   GET  /api/feed?space=                  the newest posts from the Jisst social network
 //   GET  /api/push/key, POST /api/push/subscribe {subscription}    phone alerts (Web Push)
+//   POST /api/calls/token {room, token}    a ticket to join the call in a chat (LiveKit), for members of that chat only
 // Chat server endpoint:
 //   POST /_matrix/push/v1/notify           the chat server tells us a message arrived; we send the phone alert
 import http from 'node:http';
@@ -25,6 +26,16 @@ import { matrix } from './lib/matrix.mjs';
 import { bots } from './lib/bots.mjs';
 import { vapidKeys, send as pushSend } from './lib/webpush.mjs';
 import { AGENTS, SOON } from '../app/agents/index.js';
+
+/** A LiveKit access ticket (a JWT signed with the call server's secret): this person may join this chat's call. */
+export function callTicket({ key, secret }, room, identity, name, now = Date.now()) {
+  const part = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const t = Math.floor(now / 1000);
+  const head = part({ alg: 'HS256', typ: 'JWT' });
+  const claims = part({ iss: key, sub: identity, name, nbf: t - 10, exp: t + 6 * 3600,
+    video: { room: 'r' + crypto.createHash('sha256').update(room).digest('hex').slice(0, 32), roomJoin: true, canPublish: true, canSubscribe: true, canPublishData: true } });
+  return `${head}.${claims}.${crypto.createHmac('sha256', secret).update(`${head}.${claims}`).digest('base64url')}`;
+}
 
 export function gateway(cfg = config()) {
   const db = store(cfg.dir), mx = matrix(cfg), vapid = vapidKeys(cfg.dir);
@@ -118,7 +129,7 @@ export function gateway(cfg = config()) {
   // ---------- routes ----------
   async function route(req, res) {
     const u = new URL(req.url, 'http://x'), p = u.pathname, ip = ipOf(req);
-    if (p === '/api/health') return json(res, 200, { ok: true, chat: (await mx.call('GET', '/_matrix/client/versions').catch(() => ({ status: 0 }))).status === 200, ways: await signinWays(), feed: !!cfg.feedUrl, push: true });
+    if (p === '/api/health') return json(res, 200, { ok: true, chat: (await mx.call('GET', '/_matrix/client/versions').catch(() => ({ status: 0 }))).status === 200, ways: await signinWays(), feed: !!cfg.feedUrl, push: true, calls: !!cfg.livekit.secret });
     if (p === '/api/signin/ways') return json(res, 200, await signinWays());
     if (req.method === 'POST' && p.startsWith('/api/signin/')) {
       if (limited('signin:' + ip, 40, 600e3)) return fail(res, 429, 'Too many tries. Please wait a few minutes.');
@@ -164,6 +175,19 @@ export function gateway(cfg = config()) {
     }
     if (p === '/api/feed') return json(res, 200, await feed(String(u.searchParams.get('space') || '').slice(0, 40)));
     if (p === '/api/push/key') return json(res, 200, { key: vapid.publicKey });
+    if (p === '/api/calls/token' && req.method === 'POST') {
+      if (!cfg.livekit.secret) return fail(res, 503, "Calls aren't switched on on this server yet.");
+      if (limited('call:' + ipOf(req), 60, 600_000)) return fail(res, 429, 'Too many tries. Please wait a few minutes.');
+      // the app shows its own chat sign-in; the chat server says who that is and whether they're in the chat
+      const b = await body(req), room = String(b.room || ''), token = String(b.token || '');
+      const asUser = (path) => fetch(cfg.hs + path, { headers: { authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(5000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const whoami = await asUser('/_matrix/client/v3/account/whoami');
+      if (!whoami?.user_id) return fail(res, 401, 'Please sign in again.');
+      const joined = await asUser(`/_matrix/client/v3/rooms/${encodeURIComponent(room)}/joined_members`);
+      if (!joined?.joined?.[whoami.user_id]) return fail(res, 403, "You're not in this chat.");
+      const name = joined.joined[whoami.user_id].display_name || whoami.user_id;
+      return json(res, 200, { url: cfg.livekit.url, token: callTicket(cfg.livekit, room, whoami.user_id, name) });
+    }
     if (p === '/api/push/subscribe' && req.method === 'POST') {
       const s = who(req); if (!s) return fail(res, 401, 'Please sign in.');
       const b = await body(req), sub = b.subscription;

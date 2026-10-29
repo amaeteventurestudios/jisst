@@ -12,7 +12,7 @@ import { config } from '../gateway/lib/config.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'app');
 const PORT = +(process.env.PORT || 8310), GW = PORT + 1;
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.json': 'application/json' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.json': 'application/json', '.mjs': 'text/javascript; charset=utf-8', '.wasm': 'application/wasm' };
 
 const hs = await fakeHomeserver({ regToken: 'dev-token' });
 const cfg = config({ ...process.env, JISST_DATA: process.env.JISST_DATA || fs.mkdtempSync(path.join(os.tmpdir(), 'jisst-dev-')), JISST_PORT: String(GW),

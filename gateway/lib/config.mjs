@@ -28,5 +28,7 @@ export function config(env = process.env) {
     secureCookies: env.JISST_INSECURE_COOKIES !== '1',
     devSignin: env.JISST_DEV_SIGNIN === '1',                           // tests only: sign in without Noveniqe Core
     bots: env.JISST_BOTS !== '0',
+    // calls (LiveKit on this server); the key and secret are made by server/install.sh
+    livekit: { url: env.JISST_LIVEKIT_URL || url(env.JISST_PUBLIC_URL, 'http://localhost:8300').replace(/^http/, 'ws') + '/livekit', key: env.JISST_LIVEKIT_KEY || 'jisst', secret: env.JISST_LIVEKIT_SECRET || '' },
   };
 }

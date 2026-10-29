@@ -29,6 +29,8 @@ async function run(browser, sizeName, scheme, mode) {
   else { await page.fill('#dv', 'Ada Obi ' + sizeName + scheme); await tap('form[data-form="dev"] .btn'); }
   await wait(mode === 'demo' ? 900 : 2500);
   await shot('2-chats');
+  // a new account opens straight into the helper's chat
+  if (mobile && await page.locator('#chathead [data-act="close-chat"]').isVisible()) await backToList();
   // the helper agent's chat
   const nav = mobile ? '#tabbar' : '#railtabs';
   if (mode === 'live') { await tap(`${nav} [data-tab="agents"]`); await tap('[data-agent="@jisst:jisst.app"]'); await wait(2500); }
@@ -50,7 +52,7 @@ async function run(browser, sizeName, scheme, mode) {
 
 const browser = await chromium.launch();
 for (const mode of MODE === 'both' ? ['demo', 'live'] : [MODE]) for (const s of pick) for (const scheme of ['light', 'dark']) {
-  try { await run(browser, s, scheme, mode); } catch (e) { errors.push(`${mode}-${s}-${scheme}: FAILED ${e.message.split('\n')[0]}`); }
+  try { await run(browser, s, scheme, mode); } catch (e) { errors.push(`${mode}-${s}-${scheme}: FAILED ${e.message.split('\n').slice(0, 3).join(' | ')}`); }
 }
 await browser.close();
 console.log(errors.length ? 'Problems:\n' + errors.join('\n') : 'no console errors');
