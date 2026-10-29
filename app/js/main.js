@@ -171,15 +171,17 @@ function ringCheck() {
 }
 function setTabs() { const t = tabs(); $('#railtabs').innerHTML = String(t); $('#tabbar').innerHTML = String(t); $('#tabbar').hidden = !!S.room && innerWidth < 900 || !!S.view; }
 
+const v0 = () => S.view;
 // ---------- the side column: one tab, or a screen opened from it ----------
 function side(soft = false) {
   const el = $('#side'); if (!el) return;
   setTabs();
   $('#shell').classList.toggle('in-chat', !!S.room);
   if (soft && (S.view || ['feed', 'calls', 'you', 'agents'].includes(S.tab))) { if (S.view === 'info') el.innerHTML = String(viewInfo()); else if (!S.view && S.tab === 'agents') el.innerHTML = String(tabAgents()); return; }
+  if (soft && v0() === 'archived') { const list = $('#chatlist'); if (list) { list.innerHTML = String(chatRows()); return; } }
   if (soft && S.tab === 'chats') { const list = $('#chatlist'); if (list) { list.innerHTML = String(chatRows()); return; } }
   const v = S.view;
-  el.innerHTML = String(v === 'starred' ? viewStarred() : v === 'new' ? viewNew() : v === 'group' ? viewGroup() : v === 'info' ? viewInfo() : v === 'make-agent' ? viewMakeAgent() : v === 'rename' ? viewRename()
+  el.innerHTML = String(v === 'archived' ? html`${top('Archived', { back: true })}<div class="scroll" id="chatlist">${chatRows()}</div>` : v === 'blocked' ? viewBlocked() : v === 'starred' ? viewStarred() : v === 'new' ? viewNew() : v === 'group' ? viewGroup() : v === 'info' ? viewInfo() : v === 'make-agent' ? viewMakeAgent() : v === 'rename' ? viewRename()
     : S.tab === 'chats' ? tabChats() : S.tab === 'feed' ? tabFeed() : S.tab === 'agents' ? tabAgents() : S.tab === 'calls' ? tabCalls() : tabYou());
   if (S.tab === 'feed' && !v && !S.feed && !S.feedErr) loadFeed();
 }
@@ -191,16 +193,22 @@ const FILTERS = [['all', 'All'], ['unread', 'Unread'], ['fav', 'Favorites'], ['g
 const FILTER_TEST = { all: () => true, unread: (r) => r.unread > 0, fav: (r) => r.favorite, groups: (r) => !r.dm, agents: (r) => !!r.agentId };
 function chatRows() {
   const q = S.q.toLowerCase(), f = S.filter || 'all';
-  const rooms = S.engine.rooms().filter((r) => (!q || r.name.toLowerCase().includes(q)) && FILTER_TEST[f](r));
+  const showArch = S.view === 'archived';
+  const all = S.engine.rooms().filter((r) => (!q || r.name.toLowerCase().includes(q)) && FILTER_TEST[f](r));
+  const rooms = all.filter((r) => !!r.archived === showArch).sort((a, b) => (b.pinned ?? -1) - (a.pinned ?? -1) || b.ts - a.ts);
+  const nArch = showArch ? 0 : all.filter((r) => r.archived).length;
+  const archRow = nArch && !q ? html`<button class="row archrow" data-act="archived">${icon('archive')}<span class="mid"><span class="l1"><span class="name">Archived</span><span class="time">${nArch}</span></span></span></button>` : '';
+  if (showArch && !rooms.length) return html`<div class="empty"><p>No archived chats. Press and hold a chat (or right-click it), then Archive, to tuck it away here.</p></div>`;
+  if (!rooms.length && nArch) return archRow;
   if (!rooms.length && f !== 'all' && !q) return html`<div class="empty"><p>${f === 'unread' ? "You're all caught up." : f === 'fav' ? 'No favorites yet. Open a chat, tap its name, then Add to favorites.' : f === 'groups' ? 'No groups yet.' : 'No agents yet. Add one from the Agents tab.'}</p></div>`;
   if (!rooms.length) return q ? html`<div class="empty"><p>No chats match "${S.q}".</p></div>` : html`<div class="empty"><div class="big">${icon('chats')}</div><h2>No chats yet</h2><p>Start one with the pencil button, or add an agent from the Agents tab.</p></div>`;
-  return html`${rooms.map((r) => {
+  return html`${archRow}${rooms.map((r) => {
     const ag = r.agentId ? agentOf(r.other) : null, l = r.last;
     const prev = r.typing.length ? html`<span class="prev typing">${r.dm ? 'typing…' : r.typing[0] + ' is typing…'}</span>`
       : l ? html`<span class="prev">${l.mine && !l.notice ? ticks(l.status) : ''}${!r.dm && !l.mine && !l.notice ? l.sender.split(' ')[0] + ': ' : ''}${l.text}</span>` : html`<span class="prev">No messages yet</span>`;
     return html`<button class="row" data-room="${r.id}" aria-current="${S.room === r.id}">${avatar({ id: r.other || r.id, name: r.name, agent: ag, group: !r.dm })}
-      <span class="mid"><span class="l1"><span class="name">${r.name}</span>${r.favorite ? html`<span class="favt" aria-label="Favorite">${icon('star')}</span>` : ''}${ag ? html`<span class="tag">Agent</span>` : ''}<span class="time ${r.unread ? 'new' : ''}">${r.ts ? when(r.ts) : ''}</span></span>
-      <span class="l2">${prev}${r.unread ? html`<span class="badge">${r.unread}</span>` : ''}</span></span></button>`;
+      <span class="mid"><span class="l1"><span class="name">${r.name}</span>${r.favorite ? html`<span class="favt" aria-label="Favorite">${icon('star')}</span>` : ''}${ag ? html`<span class="tag">Agent</span>` : ''}<span class="time ${r.unread && !r.muted ? 'new' : ''}">${r.ts ? when(r.ts) : ''}</span></span>
+      <span class="l2">${prev}${r.muted ? html`<span class="rowi" aria-label="Muted">${icon('mute')}</span>` : ''}${r.pinned != null ? html`<span class="rowi" aria-label="Pinned">${icon('pin')}</span>` : ''}${r.unread ? html`<span class="badge ${r.muted ? 'quiet' : ''}">${r.unread}</span>` : ''}</span></span></button>`;
   })}`;
 }
 const ticks = (st) => html`<span class="ticks ${st === 'read' ? 'read' : ''}" aria-label="${st}">${icon(st === 'sending' ? 'clock' : st === 'read' ? 'ticks' : 'tick')}</span>`;
@@ -278,7 +286,11 @@ function viewInfo() {
     ${!r.dm ? html`<div class="section">Members</div>${r.members.map((m) => html`<div class="row">${avatar({ id: m.id, name: m.name, agent: agentOf(m.id), size: 'sm' })}<span class="mid"><span class="l1"><span class="name">${m.id === S.engine.me.user_id ? 'You' : m.name}</span>${agentOf(m.id) ? html`<span class="tag">Agent</span>` : ''}</span></span></div>`)}
       <button class="set" data-act="add-member">${icon('plus')}<span class="mid">Add people or agents</span></button>` : ''}
     <button class="set" data-act="find-info">${icon('search')}<span class="mid">Search this chat</span></button>
+    <div class="set">${icon('mute')}<span class="mid">Mute alerts<small>${r.muted ? 'No alerts from this chat' : 'Alerts are on'}</small></span><button class="switch" role="switch" aria-checked="${!!r.muted}" aria-label="Mute alerts" data-act="mute-info"></button></div>
+    ${r.agentId ? '' : html`<button class="set" data-act="disappear">${icon('timer')}<span class="mid">Disappearing messages<small>${r.disappear ? 'New messages go after ' + spanLabel(r.disappear) : 'Off'}</small></span></button>`}
     <button class="set" data-act="fav">${icon('star')}<span class="mid">${r.favorite ? 'Remove from favorites' : 'Add to favorites'}</span></button>
+    ${r.dm && !r.agentId ? html`<button class="set" data-act="block-info" style="color:var(--danger)">${icon('block')}<span class="mid">${r.blocked ? 'Unblock ' : 'Block '}${r.name}</span></button>` : ''}
+    <button class="set" data-act="report-chat" style="color:var(--danger)">${icon('flag')}<span class="mid">Report ${r.dm ? r.name : 'this group'}</span></button>
     <button class="set" data-act="leave" style="color:var(--danger)">${icon('out')}<span class="mid">${r.dm ? 'Delete chat' : 'Leave group'}</span></button></div>`;
 }
 
@@ -344,6 +356,7 @@ function tabYou() {
     <div class="me">${avatar({ id: me.user_id, name: me.name, size: 'lg' })}<h2>${me.name || 'You'}</h2><p>${handle ? '@' + handle : S.demo ? 'Demo account' : ''}</p></div>
     <button class="set" data-act="rename">${icon('pencil')}<span class="mid">Edit your name</span></button>
     <button class="set" data-act="starred">${icon('star')}<span class="mid">Starred messages</span></button>
+    <button class="set" data-act="blocked">${icon('block')}<span class="mid">Blocked people</span></button>
     ${standalone ? '' : html`<button class="set" data-act="install">${icon('download')}<span class="mid">Install ${BRAND.name}<small>${ios ? 'In Safari: Share, then Add to Home Screen' : 'Put it on your home screen like any app'}</small></span></button>`}
     <div class="set">${icon('eye')}<span class="mid">Blur explicit photos<small>Checked on this phone, so private chats stay private</small></span><button class="switch" role="switch" aria-checked="${store.get('safePhotos', true)}" aria-label="Blur explicit photos" data-act="safe-photos"></button></div>
     <div class="set">${icon('bell')}<span class="mid">Message alerts<small>${S.demo ? 'Works on the real app' : 'Get a notice when a message arrives'}</small></span><button class="switch" role="switch" aria-checked="${S.pushOn && !S.demo}" aria-label="Message alerts" data-act="push" ${S.demo ? 'disabled' : ''}></button></div>
@@ -383,6 +396,8 @@ function main() {
     <input type="file" id="docfile" hidden></div>
     <button type="button" class="send" id="sendbtn" aria-label="Record a voice message">${icon('mic')}</button></form></div>`);
   chatUpdate(true);
+  const rr = S.engine.room(S.room);
+  if (rr?.blocked) $('#composer').outerHTML = String(html`<div class="blockedbar">You blocked ${rr.name}. <button type="button" class="linkbtn" data-act="unblock" data-uid="${rr.other}">Unblock</button></div>`);
   const ta = $('#msg');
   if (innerWidth >= 900) ta?.focus();
 }
@@ -435,6 +450,7 @@ function chatUpdate(initial = false) {
   out.push(r.agentId ? html`<div class="safe">${agentOf(r.other)?.name || 'This agent'} is an AI agent. It reads this chat to answer you, and only this chat.</div>`
     : r.encrypted ? html`<div class="safe">${icon('lock')} Messages in this chat are private. Only the people in it can read them, not even ${BRAND.name}.</div>`
     : html`<div class="safe">This group has an agent in it, so it isn't private: the agent reads messages here.</div>`);
+  if (r.disappear) out.push(html`<div class="safe">${icon('timer')} Disappearing messages are on: new messages go after ${spanLabel(r.disappear)}.</div>`);
   msgs.forEach((m, i) => {
     const d = dayLabel(m.ts); if (d !== lastDay) { out.push(html`<div class="day">${d}</div>`); lastDay = d; }
     out.push(m.kind === 'notice' ? html`<div class="notice">${m.text}</div>` : bubble(m, msgs[i - 1], r));
@@ -544,6 +560,7 @@ document.addEventListener('change', async (e) => {
   }
 });
 document.addEventListener('click', async (e) => {
+  if (Date.now() - suppressClick < 700 && e.target.closest('.row[data-room]')) return;   // a long press opened the chat's menu
   const t = e.target.closest('button, a, [data-room]'); if (!t) return;
   const d = t.dataset;
   if (d.tab) {
@@ -572,6 +589,7 @@ document.addEventListener('click', async (e) => {
   if (d.react && d.mid) { closeSheet(); return S.engine.react(S.room, d.mid, d.react).catch((err) => toast(err.message)); }
   if (d.msgmenu) return openSheet(d.msgmenu);
   if (d.hit) { closeFind(false); if (d.sroom) { S.view = null; openRoom(d.sroom); setTimeout(() => flash(d.hit), 300); return; } return flash(d.hit); }
+  if (d.dis !== undefined) { closeSheet(); const id = S.infoFor || S.room; return S.engine.setDisappear(id, +d.dis).then(() => side()).catch((err) => toast(err.message)); }
   if (d.vote !== undefined && d.mid) return S.engine.vote(S.room, d.mid, +d.vote).catch((err) => toast(err.message));
   if (d.chatwith) { if (d.chatwith === S.engine.me.user_id) return; try { const id = await S.engine.openDirect(d.chatwith); openSoon(id); } catch (err) { toast(err.message); } return; }
   if (d.file !== undefined) { try { const u = await S.engine.media(d.file); const a = document.createElement('a'); a.href = u; a.download = d.name || 'file'; a.click(); } catch { toast("Couldn't open that file."); } return; }
@@ -616,6 +634,20 @@ document.addEventListener('click', async (e) => {
     case 'att-place': closeSheet(); return sharePlace();
     case 'poll-add': { const box = $('#pollopts'); if (box.children.length < 12) box.insertAdjacentHTML('beforeend', String(html`<input name="opt" maxlength="80" placeholder="Option ${box.children.length + 1}">`)); return; }
     case 'starred': S.view = 'starred'; return side();
+    case 'archived': history.pushState({ jisst: 'view' }, ''); S.view = 'archived'; return side();
+    case 'blocked': S.view = 'blocked'; return side();
+    case 'unblock': return S.engine.block(d.uid, false).then(() => { toast('Unblocked'); side(); if (S.room) main(); }).catch((err) => toast(err.message));
+    case 'mute-info': { const r = S.engine.room(S.infoFor || S.room); await S.engine.mute(r.id, !r.muted).catch((err) => toast(err.message)); return side(); }
+    case 'disappear': return sheet(html`<div class="picker"><h3>Disappearing messages</h3><p class="fine">New messages in this chat disappear for everyone after the time you pick.</p>${[[0, 'Off'], [86400, '24 hours'], [604800, '7 days'], [7776000, '90 days']].map(([t, l]) => html`<button type="button" class="set" data-dis="${t}">${icon('timer')}<span class="mid">${l}</span></button>`)}</div>`, 'Disappearing messages');
+    case 'block-info': { const r = S.engine.room(S.infoFor || S.room); if (!r.blocked && !confirm(`Block ${r.name}? You won't see their messages or calls.`)) return; await S.engine.block(r.other, !r.blocked).catch((err) => toast(err.message)); toast(r.blocked ? 'Unblocked' : 'Blocked'); return side(); }
+    case 'report-chat': { const r = S.engine.room(S.infoFor || S.room); return openReport({ roomId: r.id, who: r.dm ? r.name : 'the group ' + r.name, other: r.dm && !r.agentId ? r.other : null }); }
+    case 'msg-report': { const m = sheetMsg(); closeSheet(); if (m) openReport({ roomId: S.room, msg: m, who: m.senderName, other: m.sender }); return; }
+    case 'send-report': return sendReport(t);
+    case 'room-pin': case 'room-mute': case 'room-archive': case 'room-fav': {
+      const r = S.engine.room(d.rid); closeSheet(); if (!r) return;
+      const job = d.act === 'room-pin' ? S.engine.pin(r.id, r.pinned == null) : d.act === 'room-mute' ? S.engine.mute(r.id, !r.muted) : d.act === 'room-archive' ? S.engine.archive(r.id, !r.archived) : S.engine.setFavorite(r.id, !r.favorite);
+      return job.then(() => side(true)).catch((err) => toast(err.message));
+    }
     case 'msg-delete': { const m = sheetMsg(); closeSheet(); if (m) S.engine.remove(S.room, m.id).catch((err) => toast(err.message)); return; }
     case 'try-demo': S.demo = true; return welcome();
     case 'leave-demo': store.set('demoName', null); S.engine?.stop(); S.room = null; S.tab = 'chats'; return S.gateway ? (S.demo = false, welcome()) : welcome();
@@ -664,6 +696,7 @@ function openSheet(mid) {
     ${m.waiting ? '' : html`<button type="button" class="set" data-act="msg-star">${icon('star')}<span class="mid">${m.starred ? 'Unstar' : 'Star'}</span></button>`}
     ${m.text && !m.call && m.kind === 'text' ? html`<button type="button" class="set" data-act="msg-copy">${icon('copy')}<span class="mid">Copy</span></button>` : ''}
     ${m.text && !m.call && S.gateway?.translate && !S.demo ? html`<button type="button" class="set" data-act="msg-translate">${icon('translate')}<span class="mid">${S.tr[m.id] ? 'Show the original' : 'Translate'}</span></button>` : ''}
+    ${!m.mine && !m.waiting ? html`<button type="button" class="set" data-act="msg-report" style="color:var(--danger)">${icon('flag')}<span class="mid">Report</span></button>` : ''}
     ${m.mine ? html`<button type="button" class="set" data-act="msg-delete" style="color:var(--danger)">${icon('trash')}<span class="mid">Delete for everyone</span></button>` : ''}</div>`);
   document.body.append(el);
 }
@@ -693,12 +726,15 @@ async function toggleEmoji() {
 document.addEventListener('pointerdown', (e) => { const pop = $('#emojipop'); if (pop && !pop.contains(e.target) && !e.target.closest('[data-act="emoji"]')) pop.remove(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#emojipop')?.remove(); });
 // long-press a message on a phone, or right-click on a computer
-let pressT = 0;
+let pressT = 0, suppressClick = 0;
 document.addEventListener('pointerdown', (e) => {
+  const row = e.target.closest('.row[data-room]');
+  if (row && e.pointerType !== 'mouse' && !row.closest('#picker')) { clearTimeout(pressT); pressT = setTimeout(() => { navigator.vibrate?.(15); suppressClick = Date.now(); roomMenu(row.dataset.room); }, 480); return; }
   const msg = e.target.closest('.msg[data-mid]'); if (!msg || e.pointerType === 'mouse' || e.target.closest('button, a')) return;
   clearTimeout(pressT); pressT = setTimeout(() => { navigator.vibrate?.(15); openSheet(msg.dataset.mid); }, 480);
 });
 for (const ev of ['pointerup', 'pointercancel', 'pointermove']) document.addEventListener(ev, (e) => { if (ev !== 'pointermove' || Math.abs(e.movementY) + Math.abs(e.movementX) > 6) clearTimeout(pressT); });
+document.addEventListener('contextmenu', (e) => { const row = e.target.closest('.row[data-room]'); if (row && !row.closest('#picker')) { e.preventDefault(); return roomMenu(row.dataset.room); } }, true);
 document.addEventListener('contextmenu', (e) => { const msg = e.target.closest('.msg[data-mid]'); if (msg && !e.target.closest('a')) { e.preventDefault(); openSheet(msg.dataset.mid); } });
 document.addEventListener('dblclick', (e) => { const msg = e.target.closest('.msg[data-mid]'); if (msg && !e.target.closest('button, a')) S.engine.react(S.room, msg.dataset.mid, '❤️').catch(() => {}); });
 
@@ -716,6 +752,43 @@ function runFind(q) {
   hits.innerHTML = found.length ? String(html`${found.map((m) => html`<button type="button" class="hit" data-hit="${m.id}"><b>${m.mine ? 'You' : m.senderName}</b> <span>${m.text.slice(0, 120)}</span><small>${when(m.ts)}</small></button>`)}`) : String(html`<p class="nohit">Nothing found in the messages loaded on this phone.</p>`);
 }
 function flash(mid) { const el = $(`.msg[data-mid="${CSS.escape(mid)}"]`); if (!el) return; el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
+
+// ---------- chat controls: reports, blocked people, a chat's own menu ----------
+const spanLabel = (t) => (t >= 86400 * 60 ? '90 days' : t >= 86400 * 7 ? '7 days' : t >= 86400 ? '24 hours' : Math.round(t / 3600) + ' hours');
+let REPORT = null;
+function openReport(r) {
+  REPORT = r;
+  sheet(html`<form class="picker" data-form="report"><h3>Report ${r.who}</h3><p class="fine">The people who run ${BRAND.name} will look at it. ${r.msg && S.engine.room(r.roomId)?.encrypted ? 'This chat is private, so we only see the message if you share it below.' : ''}</p>
+    ${['Spam', 'Scam or fraud', 'Bullying or threats', 'Explicit content', 'Something else'].map((x, i) => html`<label class="set radio"><input type="radio" name="why" value="${x}" ${i === 0 ? 'checked' : ''}><span class="mid">${x}</span></label>`)}
+    ${r.msg ? html`<label class="set radio"><input type="checkbox" name="share" checked><span class="mid">Share this message with the report<small>${preview(r.msg).slice(0, 80)}</small></span></label>` : ''}
+    ${r.other ? html`<label class="set radio"><input type="checkbox" name="block"><span class="mid">Also block ${r.who}</span></label>` : ''}
+    <button type="button" class="btn" data-act="send-report" style="background:var(--danger)">Report</button></form>`, 'Report');
+}
+async function sendReport(btn) {
+  const f = btn.closest('form'), r = REPORT; if (!r) return;
+  const reason = f.why.value, share = f.share?.checked, block = f.block?.checked;
+  closeSheet();
+  try {
+    if (r.msg) await S.engine.report(r.roomId, r.msg.id, reason).catch(() => {});
+    if (!S.demo) await api.report({ room: r.roomId, event: r.msg?.id || '', reason, who: (r.other || '') + ' ' + r.who, text: share && r.msg ? preview(r.msg) : '' });
+    if (block && r.other) await S.engine.block(r.other, true);
+    toast('Thank you. Your report was sent.');
+  } catch (err) { toast(err.message); }
+  side(); if (S.room && block) main();
+}
+function viewBlocked() {
+  const list = S.engine.blocked();
+  return html`${top('Blocked people', { back: true })}<div class="scroll">${list.length ? list.map((p) => html`<div class="row">${avatar({ id: p.id, name: p.name, size: 'sm' })}<span class="mid"><span class="name">${p.name}</span></span><button type="button" class="btn ghost small" data-act="unblock" data-uid="${p.id}">Unblock</button></div>`)
+    : html`<div class="empty"><p>You haven't blocked anyone. Block someone from their chat's info screen.</p></div>`}</div>`;
+}
+function roomMenu(id) {
+  const r = S.engine.room(id); if (!r) return;
+  sheet(html`<div class="picker"><h3>${r.name}</h3>
+    <button type="button" class="set" data-act="room-pin" data-rid="${id}">${icon('pin')}<span class="mid">${r.pinned != null ? 'Unpin chat' : 'Pin chat'}</span></button>
+    <button type="button" class="set" data-act="room-mute" data-rid="${id}">${icon('mute')}<span class="mid">${r.muted ? 'Unmute' : 'Mute alerts'}</span></button>
+    <button type="button" class="set" data-act="room-fav" data-rid="${id}">${icon('star')}<span class="mid">${r.favorite ? 'Remove from favorites' : 'Add to favorites'}</span></button>
+    <button type="button" class="set" data-act="room-archive" data-rid="${id}">${icon('archive')}<span class="mid">${r.archived ? 'Unarchive' : 'Archive'}</span></button></div>`, 'Chat options');
+}
 
 // ---------- replying, attaching, picking chats ----------
 function composeBar() {

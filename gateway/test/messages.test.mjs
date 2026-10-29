@@ -77,3 +77,21 @@ test('forwarding copies a message to another chat, marked as forwarded; stars fo
   await tunde.star(group, fw.id, false);
   assert.equal(tunde.starred().length, 0);
 });
+
+test('mute, pin, archive, disappearing messages, block and report', async () => {
+  await ada.mute(roomId, true); await ada.pin(roomId, true); await ada.archive(roomId, true);
+  await until(() => { const r = ada.room(roomId); return r.muted && r.pinned != null && r.archived; });
+  await ada.setDisappear(roomId, 3600);
+  await until(() => tunde.room(roomId)?.disappear === 3600);
+  await tunde.send(roomId, 'gone in an hour');
+  const raw = hs.rooms.get(roomId).events.at(-1);
+  assert.equal(raw.type, 'm.room.encrypted');   // the end time travels inside the locked message
+  const m = await until(() => ada.timeline(roomId).find((x) => x.text === 'gone in an hour'));
+  await ada.report(roomId, m.id, 'Spam');
+  assert.equal(hs.reports.at(-1).reason, 'Spam');
+  await ada.block('@tunde:jisste.com', true);
+  assert.ok(!ada.timeline(roomId).some((x) => x.text === 'gone in an hour'));
+  assert.equal(ada.room(roomId).blocked, true);
+  await ada.block('@tunde:jisste.com', false);
+  await ada.setDisappear(roomId, 0);
+});

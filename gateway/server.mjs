@@ -16,6 +16,7 @@
 //   GET  /api/feed?space=                  the newest posts from the Jisste social network
 //   GET  /api/push/key, POST /api/push/subscribe {subscription}    phone alerts (Web Push)
 //   POST /api/calls/token {room, token}    a ticket to join the call in a chat (LiveKit), for members of that chat only
+//   POST /api/report {room, event, reason, who, text?}  a report reaches the owners (JISST_OWNERS) from the Safety account
 //   POST /api/translate {text, target}     one message translated on our own server (Argos models); nothing is kept
 // Chat server endpoint:
 //   POST /_matrix/push/v1/notify           the chat server tells us a message arrived; we send the phone alert
@@ -54,6 +55,18 @@ export function gateway(cfg = config()) {
     try { const o = JSON.parse(Buffer.from(p, 'base64url')); return o.exp > Date.now() ? o : null; } catch { return null; } };
   const cookie = (name, val, maxAge) => `${name}=${encodeURIComponent(val)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${cfg.secureCookies ? '; Secure' : ''}`;
   const who = (req) => unsign(cookies(req)['jisst.sid']);
+  // The Safety account tells the owners (chat addresses in JISST_OWNERS) about reports, in one chat each
+  let safety = null;
+  async function tellOwners(text) {
+    if (!cfg.owners.length) return;
+    safety ||= await mx.ensure('safety', 'Jisste Safety').then(async (a) => { await mx.setName(a.access_token, a.user_id, 'Jisste Safety').catch(() => {}); return a; });
+    const owners = cfg.owners.map((o) => (o.includes(':') ? o : db.all('people').find((x) => x.handle === o.replace(/^@/, '').toLowerCase())?.mxid)).filter(Boolean);
+    for (const owner of owners) {
+      let room = db.get('safetyrooms', owner)?.room;
+      if (!room) { room = (await mx.createRoom(safety.access_token, { is_direct: true, invite: [owner], preset: 'trusted_private_chat', name: 'Safety reports' })).room_id; db.put('safetyrooms', owner, { room }); }
+      await mx.send(safety.access_token, room, { msgtype: 'm.notice', body: text });
+    }
+  }
   const ipOf = (req) => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   const hits = new Map();
   const limited = (k, n, ms) => { const now = Date.now(), h = (hits.get(k) || []).filter((t) => now - t < ms); h.push(now); hits.set(k, h); return h.length > n; };
@@ -188,6 +201,14 @@ export function gateway(cfg = config()) {
       if (!joined?.joined?.[whoami.user_id]) return fail(res, 403, "You're not in this chat.");
       const name = joined.joined[whoami.user_id].display_name || whoami.user_id;
       return json(res, 200, { url: cfg.livekit.url, token: callTicket(cfg.livekit, room, whoami.user_id, name) });
+    }
+    if (p === '/api/report' && req.method === 'POST') {
+      const s = who(req), me = s && db.get('people', s.u); if (!me) return fail(res, 401, 'Please sign in.');
+      if (limited('report:' + s.u, 20, 3600_000)) return fail(res, 429, 'Too many reports. Please wait a while.');
+      const b = await body(req), clip = (v, n) => String(v || '').slice(0, n);
+      const rec = db.put('reports', crypto.randomUUID(), { by: me.mxid, room: clip(b.room, 200), event: clip(b.event, 200), reason: clip(b.reason, 300), who: clip(b.who, 200), text: clip(b.text, 2000), at: Date.now() });
+      tellOwners(`Report from ${me.name} (${me.mxid})\nAbout: ${rec.who || 'a message'}\nReason: ${rec.reason || '-'}${rec.text ? '\nThe message, shared by the person reporting it: ' + rec.text : ''}\nChat: ${rec.room}`).catch((e) => log('report relay: ' + e.message));
+      return json(res, 200, { ok: true });
     }
     if (p === '/api/translate' && req.method === 'POST') {
       if (!cfg.translateUrl) return fail(res, 503, "Translation isn't switched on on this server yet.");

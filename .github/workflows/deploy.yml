@@ -9,6 +9,7 @@
 #                        a free name that always points at the server. Add the real domain once its DNS A record points there.
 #     JISST_SERVER_NAME  the end of every chat address (@ada:jisste.com; default jisste.com). Before launch a new name starts the
 #                        chat server over, empty. At launch set JISST_LAUNCHED to yes: from then on the name never changes.
+#     JISST_OWNERS       your @handle in Jisste (more than one: separated by spaces). Reports of bad messages reach you there.
 #     JISST_LOCAL_AI     yes to run a free local model (Qwen3 on llama.cpp) for the helper agent's open questions. Off by default.
 #     JISST_FEED_URL     where the Jisste social network answers (default https://palasora.com)
 name: Deploy to server
@@ -55,6 +56,7 @@ jobs:
           FEED: ${{ vars.JISST_FEED_URL }}
           LAUNCHED: ${{ vars.JISST_LAUNCHED }}
           LOCAL_AI: ${{ vars.JISST_LOCAL_AI }}
+          OWNERS: ${{ vars.JISST_OWNERS }}
         run: |
           set -euo pipefail
           if [ -z "$HOST" ] || [ -z "$KEY" ]; then echo '::error::Add the SERVER_HOST, SERVER_USER and SERVER_SSH_KEY secrets first (the same values as in the palasora repo).'; exit 1; fi
@@ -69,7 +71,7 @@ jobs:
           clean() { printf '%s' "$1" | tr -cd 'A-Za-z0-9.:/_-'; }
           OPTS="-i key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
           scp $OPTS jisst.tgz "$USER@$HOST:/tmp/"
-          ssh $OPTS "$USER@$HOST" "JISST_PUBLIC_IP='$(clean "$HOST")' JISST_DOMAIN='$DOMAIN' JISST_SERVER_NAME='$(clean "$SERVER_NAME")' JISST_FEED_URL='$(clean "$FEED")' JISST_LAUNCHED='$(clean "$LAUNCHED")' JISST_LOCAL_AI='$(clean "$LOCAL_AI")' bash -s" < server/install.sh
+          ssh $OPTS "$USER@$HOST" "JISST_PUBLIC_IP='$(clean "$HOST")' JISST_DOMAIN='$DOMAIN' JISST_SERVER_NAME='$(clean "$SERVER_NAME")' JISST_FEED_URL='$(clean "$FEED")' JISST_LAUNCHED='$(clean "$LAUNCHED")' JISST_LOCAL_AI='$(clean "$LOCAL_AI")' JISST_OWNERS='$(printf '%s' "$OWNERS" | tr -cd 'A-Za-z0-9@:._ -')' bash -s" < server/install.sh
           rm -f key
           echo "SITES=$DOMAIN" >> "$GITHUB_ENV"
           echo "::notice::Jisste answers at: $(printf 'https://%s ' $DOMAIN)"

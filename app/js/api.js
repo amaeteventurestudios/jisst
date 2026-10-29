@@ -19,6 +19,7 @@ export const api = {
   agents: () => req('GET', '/api/agents'),
   makeAgent: (name, about, isPublic) => req('POST', '/api/dev/agents', { name, about, public: isPublic }),
   feed: (space) => req('GET', '/api/feed' + (space ? '?space=' + encodeURIComponent(space) : '')),
+  report: (r) => req('POST', '/api/report', r),
   translate: (text, target) => req('POST', '/api/translate', { text, target }),
   callToken: (room, token) => req('POST', '/api/calls/token', { room, token }),
   pushKey: () => req('GET', '/api/push/key'),

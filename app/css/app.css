@@ -376,3 +376,15 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
 .picker .btn { width: 100%; margin-top: 10px; }
 /* narrow phones: search moves into the chat's info screen so the name has room */
 @media (max-width: 440px) { #chathead [data-act="find"] { display: none; } }
+/* chat list: archived row, pinned and muted marks */
+.archrow > svg { width: 22px; height: 22px; margin: 0 15px 0 13px; color: var(--muted); }
+.rowi { display: inline-flex; color: var(--muted); margin-left: 4px; }
+.rowi svg { width: 15px; height: 15px; }
+.badge.quiet { background: var(--muted); }
+/* report form, blocked people, a blocked chat */
+.picker .fine { color: var(--muted); font-size: 13.5px; margin: -4px 0 10px; }
+.set.radio { cursor: pointer; }
+.set.radio input { width: 18px; height: 18px; accent-color: var(--brand); margin: 0 14px 0 4px; flex: none; }
+.btn.small { width: auto; padding: 6px 14px; font-size: 13px; margin-left: auto; }
+.blockedbar { padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); text-align: center; color: var(--muted); font-size: 14px; background: var(--panel); border-top: 1px solid var(--line); }
+.linkbtn { color: var(--brand); font-weight: 600; }

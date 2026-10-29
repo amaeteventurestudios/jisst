@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-token', port = 0 } = {}) {
   const users = new Map(), tokens = new Map(), rooms = new Map(), account = new Map(), media = new Map(), pushers = new Map();
   const tags = new Map();         // user + room -> { tag: {order} }
+  const reports = [];             // what people reported: { by, room, event, reason }
   const devices = new Map();      // user -> Map(device -> { keys, otks: Map(id -> key), fallback: Map(id -> key) })
   const deviceOf = new Map();     // access token -> device id
   const dev = (user, d) => { const m = devices.get(user) || new Map(); devices.set(user, m); if (!m.has(d)) m.set(d, { keys: null, otks: new Map(), fallback: new Map() }); return m.get(d); };
@@ -147,6 +148,7 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
       if (verb === 'typing') { room.typing.set(me, b.typing ? Date.now() + (b.timeout || 5000) : 0); bump({ room: roomId, typing: true }); return json(res, 200, {}); }
       if (verb === 'messages') { const evs = room.events.filter((e) => e.state_key === undefined); const before = u.searchParams.get('from') === 'p0' ? Math.max(0, evs.length - 30) : evs.length; const lim = +u.searchParams.get('limit') || 30;
         return json(res, 200, { chunk: evs.slice(Math.max(0, before - lim), before).reverse(), end: before - lim > 0 ? 'p0' : undefined }); }
+      if (verb === 'report') { reports.push({ by: me, room: roomId, event: rest, reason: b.reason || '' }); return json(res, 200, {}); }
       if (verb === 'joined_members') return json(res, 200, { joined: Object.fromEntries(members(room).map((x) => [x, { display_name: users.get(x)?.name }])) });
       if (verb === 'members') return json(res, 200, { chunk: [...room.state.values()].filter((e) => e.type === 'm.room.member') });
       return err(res, 404, 'M_UNRECOGNIZED', 'Unknown');
@@ -155,6 +157,13 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
       const key = me + '\u0000' + m[2], t = tags.get(key) || {}; tags.set(key, t);
       if (req.method === 'PUT') t[m[3]] = b; else if (req.method === 'DELETE') delete t[m[3]];
       bump({ room: m[2], tags: me });
+      return json(res, 200, {});
+    }
+    if ((m = p.match(/^\/_matrix\/client\/v3\/pushrules\/global\/room\/([^/]+)$/))) {   // muting a chat
+      const a = account.get(me) || new Map(); account.set(me, a);
+      const rules = a.get('m.push_rules') || { global: { room: [] } }, list = rules.global.room.filter((r) => r.rule_id !== decodeURIComponent(m[1]));
+      if (req.method === 'PUT') list.push({ rule_id: decodeURIComponent(m[1]), actions: b.actions || [], enabled: true, default: false });
+      a.set('m.push_rules', { global: { ...rules.global, room: list } }); bump({ account: me });
       return json(res, 200, {});
     }
     if ((m = p.match(/^\/_matrix\/client\/v3\/user\/([^/]+)\/account_data\/([^/]+)$/))) {
@@ -210,7 +219,7 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
     return err(res, 404, 'M_UNRECOGNIZED', 'Unknown endpoint ' + p);
   }
   const server = http.createServer((req, res) => route(req, res).catch((e) => err(res, 500, 'M_UNKNOWN', e.message)));
-  return new Promise((ok) => server.listen(port, '127.0.0.1', () => ok({ url: `http://127.0.0.1:${server.address().port}`, server, users, rooms, close: () => { for (const w of waiters) w(); server.close(); } })));
+  return new Promise((ok) => server.listen(port, '127.0.0.1', () => ok({ url: `http://127.0.0.1:${server.address().port}`, server, users, rooms, reports, close: () => { for (const w of waiters) w(); server.close(); } })));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) fakeHomeserver({ port: +(process.env.PORT || 8008) }).then((h) => console.log('stand-in chat server on', h.url));

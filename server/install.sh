@@ -56,6 +56,7 @@ setkv JISST_PUBLIC_URL "https://$MAIN"
 [ -n "$(getkv JISST_LIVEKIT_SECRET)" ] || { setkv JISST_LIVEKIT_KEY "jisst$(openssl rand -hex 6)"; setkv JISST_LIVEKIT_SECRET "$(openssl rand -hex 32)"; }
 setkv JISST_LIVEKIT_URL "wss://$MAIN/livekit"
 setkv JISST_TRANSLATE_URL "http://127.0.0.1:8305"
+setkv JISST_OWNERS "${JISST_OWNERS:-}"
 setkv JISST_LOCAL_AI_URL ""
 # Visitor stats: Noveniqe's Umami (noveniqe repo ops/server/monitoring.sh) leaves where it lives and Jisste's site id here
 if [ -f /etc/novenique/umami.public ]; then

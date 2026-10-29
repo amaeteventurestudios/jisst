@@ -35,6 +35,7 @@ export function demoEngine({ name = 'You' } = {}) {
   const names = new Map([[me.user_id, name], ...Object.entries(people), ...[...agentIds].map(([k, a]) => [k, a.name])]);
   const rooms = new Map(), subs = new Set(), reminders = [];
   let starred = [];
+  const blocked = new Set(), muted = new Set();
   let n = 0;
   const changed = () => { for (const f of subs) f(); };
   const ev = (sender, text, ago, extra = {}) => ({ id: 'e' + n++, sender, text, ts: t0 - ago, ...extra });
@@ -52,7 +53,7 @@ export function demoEngine({ name = 'You' } = {}) {
   const ctxFor = (r, group) => ({ fetchJson: exampleFetch(now), now: () => new Date(), group, tz: -new Date().getTimezoneOffset(), user: { name: me.name }, urls: { agp: 'https://agentgrandprix.com', api: '' },
     remind: async (at, what) => { const id = 'm' + n++; reminders.push({ id, at, what, room: r.id }); setTimeout(() => { const i = reminders.findIndex((x) => x.id === id); if (i < 0) return; reminders.splice(i, 1); push(r, ev('@reminders:demo', `Reminder: ${what}`, 0, { card: { buttons: [{ label: 'Again in 10 minutes', say: `remind me in 10 minutes to ${what}` }] } })); }, Math.min(Math.max(0, at - now()), 2 ** 31 - 1)); },
     reminders: async () => reminders.filter((x) => x.room === r.id), forget: async (id) => { const i = reminders.findIndex((x) => x.id === id); if (i >= 0) reminders.splice(i, 1); } });
-  const push = (r, e) => { r.events.push(e); changed(); };
+  const push = (r, e) => { if (r.disappear && !e.notice) e.expires = e.ts + r.disappear * 1000; r.events.push(e); changed(); };
 
   async function agentsReply(r, text) {
     const group = r.members.length > 2;
@@ -77,6 +78,8 @@ export function demoEngine({ name = 'You' } = {}) {
   const isPrivate = (r) => !r.members.some((m) => agentIds.has(m));
   const view = (r, e) => {
     const base = { id: e.id, sender: e.sender, senderName: names.get(e.sender) || '', mine: e.sender === me.user_id, ts: e.ts };
+    if (!e.notice && e.sender !== me.user_id && blocked.has(e.sender)) return null;
+    if (e.expires && e.expires < now()) return null;
     if (e.deleted) return { ...base, kind: 'text', text: 'This message was deleted', deleted: true, status: 'sent', reactions: [] };
     const x = e.content ? extras(e.content) : { kind: e.notice ? 'notice' : e.kind || 'text', ...(e.forwarded ? { forwarded: true } : {}) };
     const t = e.replyTo && r.events.find((y) => y.id === e.replyTo), tv = t ? view(r, t) : null;
@@ -90,8 +93,8 @@ export function demoEngine({ name = 'You' } = {}) {
   };
   function summary(r) {
     const others = r.members.filter((m) => m !== me.user_id), dm = !r.name && others.length === 1, other = dm ? others[0] : null;
-    const msgs = r.events.map((e) => view(r, e)), last = msgs[msgs.length - 1];
-    return { id: r.id, name: r.name || names.get(other) || 'Chat', dm, encrypted: isPrivate(r), favorite: !!r.fav, agentId: other && agentIds.get(other)?.id || null, other, members: r.members.map((id) => ({ id, name: names.get(id), membership: 'join', agent: agentIds.has(id) })),
+    const msgs = r.events.map((e) => view(r, e)).filter(Boolean), last = msgs[msgs.length - 1];
+    return { id: r.id, name: r.name || names.get(other) || 'Chat', dm, encrypted: isPrivate(r), favorite: !!r.fav, muted: muted.has(r.id), archived: !!r.archived, pinned: r.pinned || null, disappear: r.disappear || 0, blocked: !!(other && blocked.has(other)), agentId: other && agentIds.get(other)?.id || null, other, members: r.members.map((id) => ({ id, name: names.get(id), membership: 'join', agent: agentIds.has(id) })),
       last: last ? { text: last.kind === 'text' || last.kind === 'notice' ? last.text : preview(last), ts: last.ts, mine: last.mine, status: last.status, sender: last.senderName, notice: last.kind === 'notice' } : null,
       ts: last?.ts || t0 - 40 * H, unread: r.events.slice(r.read + 1).filter((e) => e.sender !== me.user_id && !e.notice).length, typing: r.typing };
   }
@@ -108,7 +111,7 @@ export function demoEngine({ name = 'You' } = {}) {
     onchange(f) { subs.add(f); return () => subs.delete(f); },
     rooms: () => [...rooms.values()].map(summary).sort((a, b) => b.ts - a.ts),
     room: (id) => (rooms.has(id) ? summary(rooms.get(id)) : null),
-    timeline: (id) => { const r = rooms.get(id); return r ? r.events.map((e) => view(r, e)) : []; },
+    timeline: (id) => { const r = rooms.get(id); return r ? r.events.map((e) => view(r, e)).filter(Boolean) : []; },
     name: (uid) => names.get(uid) || '',
     async send(roomId, text, { replyTo } = {}) { const r = rooms.get(roomId); push(r, ev(me.user_id, text, 0, replyTo ? { replyTo } : {})); r.read = r.events.length - 1; await agentsReply(r, text); peopleReply(r); },
     async sendFile(roomId, file, kind, info = {}) {
@@ -141,6 +144,13 @@ export function demoEngine({ name = 'You' } = {}) {
     async sendRaw(roomId, content) { const r = rooms.get(roomId); push(r, ev(me.user_id, content.body, 0, { call: content['io.jisst.call'] || null })); },
     privateChats: () => true,
     async setFavorite(roomId, on) { rooms.get(roomId).fav = on; changed(); },
+    async pin(roomId, on) { if (on && [...rooms.values()].filter((r) => r.pinned).length >= 3) throw new Error('You can pin up to 3 chats.'); rooms.get(roomId).pinned = on ? now() / 1e13 : null; changed(); },
+    async archive(roomId, on) { rooms.get(roomId).archived = on; changed(); },
+    async mute(roomId, on) { if (on) muted.add(roomId); else muted.delete(roomId); changed(); },
+    async setDisappear(roomId, seconds) { const r = rooms.get(roomId); r.disappear = seconds; push(r, { ...ev(me.user_id, seconds ? `turned on disappearing messages: new messages go after ${seconds >= 86400 * 60 ? '90 days' : seconds >= 86400 * 7 ? '1 week' : '24 hours'}` : 'turned off disappearing messages', 0), notice: true }); },
+    async block(uid, on) { if (on) blocked.add(uid); else blocked.delete(uid); changed(); },
+    blocked: () => [...blocked].map((id) => ({ id, name: names.get(id) || id })),
+    async report() {},
     markRead(roomId) { const r = rooms.get(roomId); if (r && r.read !== r.events.length - 1) { r.read = r.events.length - 1; changed(); } },
     typing() {},
     async openDirect(uid) {

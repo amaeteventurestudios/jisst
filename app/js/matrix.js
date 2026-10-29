@@ -15,7 +15,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
   const hs = homeserver.replace(/\/$/, '');
   const rooms = new Map();                       // id -> room
   const subs = new Set();
-  let direct = {}, since = null, stopped = false, names = new Map(), blobs = new Map(), ready = false, starred = [], starBusy = 0;
+  let direct = {}, since = null, stopped = false, names = new Map(), blobs = new Map(), ready = false, starred = [], starBusy = 0, muted = new Set(), blocked = new Set();
   const me = { user_id, name: '' };
   let crypto = null, cryptoFailed = false;
 
@@ -34,6 +34,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
   function applyState(r, ev) {
     if (ev.type === 'm.room.name') r.name = ev.content?.name || '';
     if (ev.type === 'm.room.encryption') r.encrypted = true;
+    if (ev.type === 'io.jisst.disappear') r.disappear = Math.max(0, +ev.content?.seconds || 0);
     if (ev.type === 'm.room.create') r.created = ev.origin_server_ts || r.created;
     if (ev.type === 'm.room.member') {
       const m = { id: ev.state_key, name: ev.content?.displayname || r.members.get(ev.state_key)?.name || ev.state_key.slice(1).split(':')[0], membership: ev.content?.membership };
@@ -52,7 +53,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
       return;
     }
     if (ev.type === 'm.room.redaction') { r.redacted.add(ev.redacts || ev.content?.redacts); return; }
-    if (!['m.room.message', 'm.room.member', 'm.room.name', 'm.room.create', 'm.room.encryption', 'm.room.encrypted'].includes(ev.type)) return;
+    if (!['m.room.message', 'm.room.member', 'm.room.name', 'm.room.create', 'm.room.encryption', 'm.room.encrypted', 'io.jisst.disappear'].includes(ev.type)) return;
     if (ev.unsigned?.transaction_id && ev.sender === user_id) { const i = r.events.findIndex((e) => e.txn === ev.unsigned.transaction_id); if (i >= 0) r.events.splice(i, 1); }
     if (r.events.some((e) => e.event_id === ev.event_id)) return;
     r.events.push(ev);
@@ -85,7 +86,9 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
   }
   async function handleSync(s) {
     if (crypto) await crypto.sync(s).catch(() => {});
-    for (const ev of s.account_data?.events || []) { if (ev.type === 'm.direct') direct = ev.content || {}; if (ev.type === 'io.jisst.starred' && !starBusy) starred = ev.content?.list || []; }   // stars: not while our own change is on its way
+    for (const ev of s.account_data?.events || []) { if (ev.type === 'm.direct') direct = ev.content || {}; if (ev.type === 'io.jisst.starred' && !starBusy) starred = ev.content?.list || [];
+      if (ev.type === 'm.push_rules') muted = new Set((ev.content?.global?.room || []).filter((x) => x.enabled !== false && !(x.actions || []).includes('notify')).map((x) => x.rule_id));
+      if (ev.type === 'm.ignored_user_list') blocked = new Set(Object.keys(ev.content?.ignored_users || {})); }   // stars: not while our own change is on its way
     for (const [id, j] of Object.entries(s.rooms?.join || {})) {
       const r = room(id); r.membership = 'join';
       for (const ev of j.state?.events || []) applyState(r, ev);
@@ -149,6 +152,9 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     if (ev.type === 'm.room.name') return { ...base, kind: 'notice', text: `${base.senderName} named the group "${c.name}"` };
     if (ev.type === 'm.room.create') return r.name ? { ...base, kind: 'notice', text: `${mine ? 'You' : base.senderName} created this group` } : null;
     if (ev.type === 'm.room.encryption') return null;   // the banner at the top of a private chat says it
+    if (ev.type === 'io.jisst.disappear') { const t = +c.seconds || 0; return { ...base, kind: 'notice', text: t ? `${mine ? 'You' : base.senderName} turned on disappearing messages: new messages go after ${spanOf(t)}` : `${mine ? 'You' : base.senderName} turned off disappearing messages` }; }
+    if (!mine && blocked.has(ev.sender)) return null;
+    if (c['io.jisst.expires'] && c['io.jisst.expires'] < now()) return null;   // a disappearing message whose time is up
     if (ev.event_id && r.redacted.has(ev.event_id)) return { ...base, kind: 'text', text: 'This message was deleted', deleted: true, status: 'sent', card: null, reactions: [] };
     if (ev.locked || ev.type === 'm.room.encrypted') return { ...base, kind: 'text', text: cryptoFailed ? 'Private message: open Jisste in a newer browser to read it' : 'Waiting for this message…', waiting: true, status: 'sent', card: null, reactions: [] };
     let status = 'sent';
@@ -170,6 +176,15 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     return { ...base, ...x, text, card: cc['io.jisst.card'] || null, url: cc.url || cc.file?.url || null, info: cc.info || {}, status, local: ev.localUrl, private: !!ev.private || (mine && r.encrypted), reactions, poll,
       call: cc['io.jisst.call'] || null, replyTo, edited: !!nc, starred: starred.some((s) => s.room === r.id && s.id === ev.event_id) };
   }
+  const spanOf = (t) => (t >= 86400 * 60 ? `${Math.round(t / 86400)} days` : t >= 86400 * 7 ? `${Math.round(t / 86400 / 7)} week${t >= 86400 * 14 ? 's' : ''}` : t >= 86400 ? `${Math.round(t / 86400)} day${t >= 172800 ? 's' : ''}` : `${Math.round(t / 3600)} hours`);
+  // Your own disappearing messages are deleted from the server once their time is up (the other phones hide them on time anyway)
+  function sweep() {
+    for (const r of rooms.values()) for (const ev of r.events) {
+      const x = ev.content?.['io.jisst.expires'];
+      if (x && x < now() && ev.sender === user_id && ev.event_id && !r.redacted.has(ev.event_id)) { r.redacted.add(ev.event_id); call('PUT', `${C}/rooms/${enc(r.id)}/redact/${enc(ev.event_id)}/j${now()}.${n++}`, {}).catch(() => {}); }
+    }
+  }
+  const sweeper = setInterval(() => { if (!stopped) { sweep(); changed(); } }, 60e3);
   function summary(r) {
     const o = others(r), dm = isDirect(r.id) || (!r.name && o.length === 1);
     const other = dm ? o[0] : null;
@@ -178,8 +193,9 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     const last = msgs[msgs.length - 1];
     let unread = 0;
     const readIdx = r.readUpTo ? r.events.findIndex((e) => e.event_id === r.readUpTo) : -1;
-    r.events.forEach((e, i) => { if (i > readIdx && e.type === 'm.room.message' && e.sender !== user_id) unread++; });
-    return { id: r.id, name, dm, encrypted: r.encrypted, favorite: !!r.tags?.['m.favourite'], agentId: other && agents.get(other.id)?.id || null, other: other?.id || null, members: [...r.members.values()].filter((m) => m.membership === 'join').map((m) => ({ ...m, agent: agents.has(m.id) })),
+    r.events.forEach((e, i) => { if (i > readIdx && e.type === 'm.room.message' && e.sender !== user_id && !blocked.has(e.sender)) unread++; });
+    return { id: r.id, name, dm, encrypted: r.encrypted, favorite: !!r.tags?.['m.favourite'], muted: muted.has(r.id), archived: !!r.tags?.['u.jisst.archived'], pinned: r.tags?.['u.jisst.pinned'] ? +r.tags['u.jisst.pinned'].order || 0 : null,
+      disappear: r.disappear || 0, blocked: !!(other && blocked.has(other.id)), agentId: other && agents.get(other.id)?.id || null, other: other?.id || null, members: [...r.members.values()].filter((m) => m.membership === 'join').map((m) => ({ ...m, agent: agents.has(m.id) })),
       last: last ? { text: last.kind === 'text' || last.kind === 'notice' ? last.text : preview(last), ts: last.ts, mine: last.mine, status: last.status, sender: last.senderName, notice: last.kind === 'notice' } : null,
       ts: last?.ts || r.created || 0, unread, typing: r.typing.map((u) => (names.get(u) || '').split(' ')[0]).filter(Boolean) };
   }
@@ -199,6 +215,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
   }
   async function sendContent(roomId, content, extra = {}) {
     const r = room(roomId), txn = `j${now()}.${n++}`;
+    if (r.disappear) content = { ...content, 'io.jisst.expires': now() + r.disappear * 1000 };
     const local = { type: 'm.room.message', sender: user_id, content, origin_server_ts: now(), txn, ...extra };
     r.events.push(local); changed();
     try { const { event_id } = await put(roomId, 'm.room.message', content, txn); local.event_id = event_id; changed(); }
@@ -208,7 +225,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
   return {
     me, ready: () => ready,
     start() { loop(); return this; },
-    stop() { stopped = true; },
+    stop() { stopped = true; clearInterval(sweeper); },
     onchange(f) { subs.add(f); return () => subs.delete(f); },
     rooms: () => [...rooms.values()].filter((r) => r.membership === 'join').map(summary).sort((a, b) => b.ts - a.ts),
     room: (id) => (rooms.has(id) ? summary(rooms.get(id)) : null),
@@ -293,6 +310,37 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
       const item = r.reactions.get(eventId)?.get(key)?.find((x) => x.txn === txn); if (item) item.event_id = event_id;
       changed();
     },
+    /** Pinned and archived chats are room tags too. */
+    async setTag(roomId, tag, on, order = 0.5) {
+      const r = room(roomId); r.tags = { ...(r.tags || {}) };
+      if (on) r.tags[tag] = { order }; else delete r.tags[tag];
+      changed();
+      const path = `${C}/user/${enc(user_id)}/rooms/${enc(roomId)}/tags/${enc(tag)}`;
+      return on ? call('PUT', path, { order }) : call('DELETE', path);
+    },
+    pin(roomId, on) {
+      if (on && [...rooms.values()].filter((r) => r.tags?.['u.jisst.pinned']).length >= 3) return Promise.reject(new Error('You can pin up to 3 chats.'));
+      return this.setTag(roomId, 'u.jisst.pinned', on, now() / 1e13);
+    },
+    archive(roomId, on) { return this.setTag(roomId, 'u.jisst.archived', on); },
+    /** Mute a chat's alerts (a standard push rule, so the chat server stops alerting every phone). */
+    async mute(roomId, on) {
+      if (on) muted.add(roomId); else muted.delete(roomId);
+      changed();
+      const path = `${C}/pushrules/global/room/${enc(roomId)}`;
+      return on ? call('PUT', path, { actions: [] }) : call('DELETE', path);
+    },
+    /** Disappearing messages: 0 (off) or seconds; new messages carry their end time. */
+    setDisappear: (roomId, seconds) => call('PUT', `${C}/rooms/${enc(roomId)}/state/io.jisst.disappear/`, { seconds }),
+    /** Block a person: you stop seeing their messages anywhere (the standard ignore list, kept by the chat server). */
+    async block(uid, on) {
+      if (on) blocked.add(uid); else blocked.delete(uid);
+      changed();
+      return call('PUT', `${C}/user/${enc(user_id)}/account_data/m.ignored_user_list`, { ignored_users: Object.fromEntries([...blocked].map((u) => [u, {}])) });
+    },
+    blocked: () => [...blocked].map((id) => ({ id, name: names.get(id) || id })),
+    /** Report a message to the people who run Jisste. */
+    report: (roomId, eventId, reason) => call('POST', `${C}/rooms/${enc(roomId)}/report/${enc(eventId)}`, { reason: String(reason).slice(0, 500), score: -100 }),
     /** Favorites are a Matrix room tag, so they follow you to every phone. */
     async setFavorite(roomId, on) {
       const r = room(roomId); r.tags = { ...(r.tags || {}) };
@@ -350,7 +398,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
       return call('POST', `${C}/pushers/set`, on ? { kind: 'http', app_id: p.app_id, pushkey: p.pushkey, app_display_name: 'Jisste', device_display_name: navigator.userAgent.slice(0, 60), lang: navigator.language || 'en', data: { url: p.url } }
         : { kind: null, app_id: p.app_id, pushkey: p.pushkey });
     },
-    async signOut() { stopped = true; crypto?.close(); await call('POST', `${C}/logout`, {}).catch(() => {}); },
+    async signOut() { stopped = true; clearInterval(sweeper); crypto?.close(); await call('POST', `${C}/logout`, {}).catch(() => {}); },
     /** The call() helper, for features that talk to the chat server directly (calls check membership with it). */
     token: () => access_token,
   };
