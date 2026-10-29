@@ -9,6 +9,7 @@ import { calls, callBubble, callStates } from './calls.js';
 import { judge, known } from './safety.js';
 import { preview } from './content.js';
 import { qrSvg, scan } from './link.js';
+import * as native from './native.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -31,6 +32,18 @@ const CALLS = calls({ getEngine: () => S.engine, isDemo: () => S.demo, roomInfo:
 // ---------- start ----------
 async function boot() {
   addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); S.installEvt = e; });
+  native.init({
+    back: () => (history.state?.jisst ? history.back() : back()), canBack: () => !!(S.room || S.view), inChat: () => !!S.room,
+    closeSheet: () => closeSheet(), installEvt: () => S.installEvt, demo: () => S.demo, icon: (n) => String(icon(n)),
+    rowActions: {
+      room: (id) => S.engine?.room(id), icon: (n) => String(icon(n)),
+      run(id, act) {
+        const r = S.engine.room(id); if (!r) return;
+        const done = act === 'read' ? (S.engine.markRead(id), null) : act === 'pin' ? S.engine.pin(id, r.pinned == null) : act === 'mute' ? S.engine.mute(id, !r.muted) : S.engine.archive(id, !r.archived);
+        Promise.resolve(done).then(() => { if (act === 'archive') toast(r.archived ? 'Back in your chats' : 'Archived'); }).catch((err) => toast(err.message));
+      },
+    },
+  });
   const wantDemo = new URLSearchParams(location.search).has('demo');
   S.gateway = wantDemo ? null : await api.health();
   // Visitor stats: page views only (no cookies, no names, never what anyone writes), and none for people who ask browsers not to track them
@@ -246,7 +259,16 @@ function side(soft = false) {
   el.innerHTML = String(v === 'archived' ? html`${top('Archived', { back: true })}<div class="scroll" id="chatlist">${chatRows()}</div>` : v === 'blocked' ? viewBlocked() : v === 'starred' ? viewStarred() : v === 'new' ? viewNew() : v === 'group' ? viewGroup() : v === 'communities' ? viewCommunities() : v === 'devices' ? viewDevices() : v === 'community' ? viewCommunity() : v === 'info' ? viewInfo() : v === 'make-agent' ? viewMakeAgent() : v === 'rename' ? viewRename()
     : S.tab === 'chats' ? tabChats() : S.tab === 'feed' ? tabFeed() : S.tab === 'agents' ? tabAgents() : S.tab === 'calls' ? tabCalls() : tabYou());
   if (S.tab === 'feed' && !v && !S.feed && !S.feedErr) loadFeed();
+  // on a phone, a new screen slides in, going back slides the last one away, and tabs fade up
+  const nav = { v: v || '', tab: S.tab }, was = side.nav; side.nav = nav;
+  if (was && !S.room) {
+    if (nav.v && nav.v !== was.v) native.screen(was.v && LEVEL[was.v] > LEVEL[nav.v] ? 'reveal' : 'push', el);
+    else if (!nav.v && was.v) native.screen('reveal', el);
+    else if (nav.tab !== was.tab) native.screen('tab', el);
+  }
 }
+// how deep each screen sits, so moving to a shallower one slides back
+const LEVEL = { communities: 1, community: 2, new: 1, group: 2, archived: 1, starred: 1, blocked: 1, devices: 1, info: 1, 'make-agent': 1, rename: 1 };
 function top(title, { back = false, actions = '', brand = false } = {}) {
   return html`<header class="top">${back ? html`<button class="iconbtn" data-act="back" aria-label="Back">${icon('back')}</button>` : ''}<h1 class="${brand ? 'brand' : ''}">${title}</h1>${actions}</header>`;
 }
@@ -538,14 +560,17 @@ function tabYou() {
     <button class="set" data-act="blocked">${icon('block')}<span class="mid">Blocked people</span></button>
     <button class="set" data-act="devices">${icon('laptop')}<span class="mid">Linked computers<small>Use ${BRAND.name} on a computer too</small></span></button>
     <button class="set" data-act="backup">${icon('key')}<span class="mid">Chat backup<small>A recovery key lets a new phone read your old private messages</small></span></button>
+    <div class="gap"></div>
     ${standalone ? '' : html`<button class="set" data-act="install">${icon('download')}<span class="mid">Install ${BRAND.name}<small>${ios ? 'In Safari: Share, then Add to Home Screen' : 'Put it on your home screen like any app'}</small></span></button>`}
     <div class="set">${icon('clock')}<span class="mid">Last seen and online<small>Off: nobody sees when you're on, and you don't see theirs</small></span><button class="switch" role="switch" aria-checked="${S.engine.privacy().lastSeen}" aria-label="Last seen and online" data-act="priv-seen"></button></div>
     <div class="set">${icon('ticks')}<span class="mid">Read ticks<small>Off: people don't see when you've read, and you don't see theirs</small></span><button class="switch" role="switch" aria-checked="${S.engine.privacy().readTicks}" aria-label="Read ticks" data-act="priv-ticks"></button></div>
     <div class="set">${icon('eye')}<span class="mid">Blur explicit photos<small>Checked on this phone, so private chats stay private</small></span><button class="switch" role="switch" aria-checked="${store.get('safePhotos', true)}" aria-label="Blur explicit photos" data-act="safe-photos"></button></div>
     <div class="set">${icon('bell')}<span class="mid">Message alerts<small>${S.demo ? 'Works on the real app' : 'Get a notice when a message arrives'}</small></span><button class="switch" role="switch" aria-checked="${S.pushOn && !S.demo}" aria-label="Message alerts" data-act="push" ${S.demo ? 'disabled' : ''}></button></div>
     <div class="set">${icon('moon')}<span class="mid">Appearance</span><span class="seg">${['system', 'light', 'dark'].map((t) => html`<button data-theme="${t}" aria-pressed="${theme === t}">${t[0].toUpperCase() + t.slice(1)}</button>`)}</span></div>
+    <div class="gap"></div>
     <button class="set" data-act="invite">${icon('link')}<span class="mid">Invite a friend<small>${BRAND.site.replace('https://', '')}</small></span></button>
     <button class="set" data-act="privacy">${icon('lock')}<span class="mid">Privacy<small>How your chats are kept</small></span></button>
+    <div class="gap"></div>
     <button class="set" data-act="${S.demo ? 'leave-demo' : 'signout'}" style="color:var(--danger)">${icon('out')}<span class="mid">${S.demo ? 'Leave the demo' : 'Sign out'}</span></button>
     <p class="fine" style="color:var(--muted);font-size:12.5px;text-align:center;padding:12px 20px 24px">${BRAND.name} by Noveniqe · built on open source: Matrix and Tuwunel</p></div>`;
 }
@@ -657,10 +682,12 @@ function chatUpdate(initial = false) {
   if (document.visibilityState === 'visible') S.engine.markRead(S.room);
 }
 function openRoom(id) {
-  if (!S.room) history.pushState({ jisst: 'room' }, '');
+  const fresh = !S.room;
+  if (fresh) history.pushState({ jisst: 'room' }, '');
   S.room = id; S.tab = 'chats'; side(); main();
+  if (fresh) native.screen('push', $('#main'));
 }
-function closeRoom() { S.room = null; side(); main(); }
+function closeRoom() { S.room = null; side(); main(); native.screen('reveal', $('#side')); }
 
 // ---------- sending ----------
 function composerState() { const has = $('#msg')?.value.trim(); const b = $('#sendbtn'); if (!b) return; b.innerHTML = String(icon(has ? 'send' : 'mic')); b.setAttribute('aria-label', has ? 'Send' : 'Record a voice message'); b.dataset.mode = has ? 'send' : 'mic'; }

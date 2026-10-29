@@ -42,6 +42,14 @@ through the Noveniqe games: one Noveniqe account signs you in to Jisste and ever
 - **Bot kit**: `docs/AGENTS.md`.
 - **Deploy**: `.github/workflows/deploy.yml` + `server/install.sh`, the same pattern as Palasora.
 
+## The phone app look (29 October 2026)
+On a touch screen under 900px wide (or with `?phone`), `app/js/native.js` puts `phone` on `<html>` and `app/css/phone.css`
+dresses the same app as a phone app: launch screen, large titles that shrink on scroll, see-through bars, screens that
+slide in, swipe from the left edge to go back (the list peeks out underneath), swipe a chat left for Mute/Archive and
+right for Read/Pin, bottom sheets with a handle that drag down to close, grouped You settings, and a "Get the Jisste app"
+card in phone browsers (once every 14 days at most). Every rule is scoped to `html.phone`, so computers are unchanged.
+Reduce motion turns the slides off.
+
 ## The owner's steps to go live (no terminal)
 1. In this repo: Settings > Secrets and variables > Actions > New repository secret. Add the same three secrets the
    palasora repo has: `SERVER_HOST`, `SERVER_USER`, `SERVER_SSH_KEY`.
