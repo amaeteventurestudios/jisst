@@ -1,7 +1,7 @@
 // Jisste's service worker: keeps the app itself on the phone so it opens offline, and shows message alerts.
 // Chats are never cached here; they always come from the server.
-const VERSION = 'jisst-2';
-const SHELL = ['./', 'index.html', 'css/app.css', 'js/main.js', 'js/api.js', 'js/matrix.js', 'js/demo.js', 'js/ui.js', 'js/crypto.js', 'js/calls.js', 'vendor/minisearch/index.js',
+const VERSION = 'jisst-3';
+const SHELL = ['./', 'index.html', 'css/app.css', 'js/main.js', 'js/api.js', 'js/matrix.js', 'js/demo.js', 'js/ui.js', 'js/crypto.js', 'js/calls.js', 'js/content.js', 'js/safety.js', 'vendor/minisearch/index.js',
   'agents/index.js', 'agents/jisst.js', 'agents/grandprix.js', 'agents/wire.js', 'agents/reminders.js', 'icons/icon.svg', 'icons/icon-192.png', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });

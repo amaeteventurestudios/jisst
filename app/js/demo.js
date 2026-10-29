@@ -1,6 +1,7 @@
 // The demo: the whole app with example chats, running only in this browser. It has the same shape as matrix.js, and
 // its agents are the real ones (app/agents/), answering from example race results and example feed posts.
 import { AGENTS, byId, answer } from '../agents/index.js';
+import { extras, tally, POLL, preview, contactContent, pollContent, locationContent } from './content.js';
 
 const H = 3600e3, M = 60e3;
 const EXAMPLE_TEAMS = [['Harmattan Racing', 25, 1], ['Lagoon Dynamics', 18, 2], ['Kilimanjaro Motorsport', 15, 3], ['Volta Speed', 12, 4], ['Northern Lights GP', 10, 5]];
@@ -33,6 +34,7 @@ export function demoEngine({ name = 'You' } = {}) {
   const agentIds = new Map(AGENTS.map((a) => [`@${a.id}:demo`, a]));
   const names = new Map([[me.user_id, name], ...Object.entries(people), ...[...agentIds].map(([k, a]) => [k, a.name])]);
   const rooms = new Map(), subs = new Set(), reminders = [];
+  let starred = [];
   let n = 0;
   const changed = () => { for (const f of subs) f(); };
   const ev = (sender, text, ago, extra = {}) => ({ id: 'e' + n++, sender, text, ts: t0 - ago, ...extra });
@@ -73,16 +75,24 @@ export function demoEngine({ name = 'You' } = {}) {
   }
 
   const isPrivate = (r) => !r.members.some((m) => agentIds.has(m));
-  const view = (r, e) => e.deleted ? { id: e.id, sender: e.sender, senderName: names.get(e.sender) || '', mine: e.sender === me.user_id, ts: e.ts, kind: 'text', text: 'This message was deleted', deleted: true, status: 'sent', reactions: [] } : ({ id: e.id, sender: e.sender, senderName: names.get(e.sender) || '', mine: e.sender === me.user_id, ts: e.ts, agent: agentIds.has(e.sender),
-    kind: e.notice ? 'notice' : e.kind || 'text', text: e.notice ? `${e.sender === me.user_id ? 'You' : names.get(e.sender)} ${e.text}` : e.text, card: e.card || null, url: e.url || null, local: e.url, info: e.info || {},
-    status: e.sender !== me.user_id ? 'sent' : r.events.slice(r.events.indexOf(e) + 1).some((x) => x.sender !== me.user_id && !x.notice) ? 'read' : 'sent',
-    private: isPrivate(r), call: e.call || null,
-    reactions: Object.entries(e.reactions || {}).map(([key, who]) => ({ key, count: who.length, mine: who.includes(me.user_id), names: who.map((u) => names.get(u)) })).filter((x) => x.count) });
+  const view = (r, e) => {
+    const base = { id: e.id, sender: e.sender, senderName: names.get(e.sender) || '', mine: e.sender === me.user_id, ts: e.ts };
+    if (e.deleted) return { ...base, kind: 'text', text: 'This message was deleted', deleted: true, status: 'sent', reactions: [] };
+    const x = e.content ? extras(e.content) : { kind: e.notice ? 'notice' : e.kind || 'text', ...(e.forwarded ? { forwarded: true } : {}) };
+    const t = e.replyTo && r.events.find((y) => y.id === e.replyTo), tv = t ? view(r, t) : null;
+    return { ...base, agent: agentIds.has(e.sender), ...x,
+      text: e.notice ? `${e.sender === me.user_id ? 'You' : names.get(e.sender)} ${e.text}` : e.text, card: e.card || null, url: e.url || null, local: e.url, info: e.info || {},
+      status: e.sender !== me.user_id ? 'sent' : r.events.slice(r.events.indexOf(e) + 1).some((y) => y.sender !== me.user_id && !y.notice) ? 'read' : 'sent',
+      private: isPrivate(r), call: e.call || null, edited: !!e.edited, starred: starred.some((s) => s.room === r.id && s.id === e.id),
+      replyTo: tv ? { id: tv.id, senderName: tv.mine ? 'You' : tv.senderName, text: preview(tv) } : null,
+      poll: x.pollDef ? tally(x.pollDef, [...(e.votes || new Map())].map(([sender, i]) => ({ sender, key: POLL + i })), me.user_id) : null,
+      reactions: Object.entries(e.reactions || {}).map(([key, who]) => ({ key, count: who.length, mine: who.includes(me.user_id), names: who.map((u) => names.get(u)) })).filter((y) => y.count) };
+  };
   function summary(r) {
     const others = r.members.filter((m) => m !== me.user_id), dm = !r.name && others.length === 1, other = dm ? others[0] : null;
     const msgs = r.events.map((e) => view(r, e)), last = msgs[msgs.length - 1];
     return { id: r.id, name: r.name || names.get(other) || 'Chat', dm, encrypted: isPrivate(r), favorite: !!r.fav, agentId: other && agentIds.get(other)?.id || null, other, members: r.members.map((id) => ({ id, name: names.get(id), membership: 'join', agent: agentIds.has(id) })),
-      last: last ? { text: last.kind === 'image' ? 'Photo' : last.kind === 'voice' ? 'Voice message' : last.text, ts: last.ts, mine: last.mine, status: last.status, sender: last.senderName, notice: last.kind === 'notice' } : null,
+      last: last ? { text: last.kind === 'text' || last.kind === 'notice' ? last.text : preview(last), ts: last.ts, mine: last.mine, status: last.status, sender: last.senderName, notice: last.kind === 'notice' } : null,
       ts: last?.ts || t0 - 40 * H, unread: r.events.slice(r.read + 1).filter((e) => e.sender !== me.user_id && !e.notice).length, typing: r.typing };
   }
 
@@ -100,8 +110,26 @@ export function demoEngine({ name = 'You' } = {}) {
     room: (id) => (rooms.has(id) ? summary(rooms.get(id)) : null),
     timeline: (id) => { const r = rooms.get(id); return r ? r.events.map((e) => view(r, e)) : []; },
     name: (uid) => names.get(uid) || '',
-    async send(roomId, text) { const r = rooms.get(roomId); push(r, ev(me.user_id, text, 0)); r.read = r.events.length - 1; await agentsReply(r, text); peopleReply(r); },
-    async sendFile(roomId, file, kind, info = {}) { const r = rooms.get(roomId); push(r, ev(me.user_id, kind === 'voice' ? 'Voice message' : 'Photo', 0, { kind, url: URL.createObjectURL(file), info })); peopleReply(r); },
+    async send(roomId, text, { replyTo } = {}) { const r = rooms.get(roomId); push(r, ev(me.user_id, text, 0, replyTo ? { replyTo } : {})); r.read = r.events.length - 1; await agentsReply(r, text); peopleReply(r); },
+    async sendFile(roomId, file, kind, info = {}) {
+      const r = rooms.get(roomId), url = URL.createObjectURL(file);
+      const content = kind === 'file' || kind === 'video' ? { content: { msgtype: kind === 'video' ? 'm.video' : 'm.file', body: file.name, info: { size: file.size, mimetype: file.type } } } : {};
+      push(r, ev(me.user_id, kind === 'voice' ? 'Voice message' : kind === 'image' ? 'Photo' : file.name, 0, { kind, url, info: { size: file.size, mimetype: file.type, ...info }, ...content })); peopleReply(r);
+    },
+    async edit(roomId, id, text) { const e = rooms.get(roomId)?.events.find((x) => x.id === id); if (e && e.sender === me.user_id) { e.text = text; e.edited = true; changed(); } },
+    async forward(toId, fromId, id) {
+      const e = rooms.get(fromId)?.events.find((x) => x.id === id); if (!e) return;
+      const { id: _, ts, reactions, votes, replyTo, edited, ...copy } = e;
+      push(rooms.get(toId), { ...copy, id: 'e' + n++, sender: me.user_id, ts: now(), forwarded: true, content: e.content ? { ...e.content, 'io.jisst.forwarded': true } : undefined });
+    },
+    async star(roomId, id, on) { starred = starred.filter((s) => !(s.room === roomId && s.id === id)); if (on) starred.unshift({ room: roomId, id }); changed(); },
+    starred: () => starred.map((s) => { const r = rooms.get(s.room), e = r?.events.find((x) => x.id === s.id); return e ? { roomId: s.room, roomName: summary(r).name, msg: view(r, e) } : null; }).filter(Boolean),
+    async sendContact(roomId, who) { const c = contactContent(who); push(rooms.get(roomId), ev(me.user_id, c.body, 0, { content: c })); },
+    async sendPoll(roomId, q, options) { const c = pollContent(q, options), r = rooms.get(roomId); push(r, ev(me.user_id, c.body, 0, { content: c, votes: new Map() }));
+      // the example people vote too
+      const e = r.events[r.events.length - 1]; r.members.filter((m) => people[m]).forEach((m, k) => setTimeout(() => { e.votes.set(m, Math.floor(Math.random() * options.length)); changed(); }, 1200 + k * 900)); },
+    async sendLocation(roomId, place) { const c = locationContent(place); push(rooms.get(roomId), ev(me.user_id, c.body, 0, { content: c })); },
+    async vote(roomId, id, i) { const e = rooms.get(roomId)?.events.find((x) => x.id === id); if (!e) return; e.votes ||= new Map(); if (e.votes.get(me.user_id) === i) e.votes.delete(me.user_id); else e.votes.set(me.user_id, i); changed(); },
     media: async (url) => url,
     async react(roomId, id, key) {
       const e = rooms.get(roomId)?.events.find((x) => x.id === id); if (!e) return;

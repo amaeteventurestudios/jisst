@@ -3,6 +3,7 @@
 // shape, so every screen works the same in the demo. Chats between people are private (end-to-end encrypted, crypto.js);
 // chats with agents are not, because the agent has to read them, and the app says so.
 import { cryptoEngine } from './crypto.js';
+import { extras, tally, POLL, preview, contactContent, pollContent, locationContent } from './content.js';
 const C = '/_matrix/client/v3';
 const enc = encodeURIComponent;
 const now = () => Date.now();
@@ -14,7 +15,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
   const hs = homeserver.replace(/\/$/, '');
   const rooms = new Map();                       // id -> room
   const subs = new Set();
-  let direct = {}, since = null, stopped = false, names = new Map(), blobs = new Map(), ready = false;
+  let direct = {}, since = null, stopped = false, names = new Map(), blobs = new Map(), ready = false, starred = [], starBusy = 0;
   const me = { user_id, name: '' };
   let crypto = null, cryptoFailed = false;
 
@@ -29,7 +30,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
   const files = new Map();      // mxc -> key for a locked photo or voice note
   const changed = () => { if (pending) return; pending = globalThis.requestAnimationFrame?.(() => { pending = null; for (const f of subs) f(); }) ?? setTimeout(() => { pending = null; for (const f of subs) f(); }); };
 
-  const room = (id) => { let r = rooms.get(id); if (!r) rooms.set(id, r = { id, name: '', members: new Map(), events: [], receipts: new Map(), typing: [], membership: 'join', created: 0, readUpTo: null, encrypted: false, reactions: new Map(), redacted: new Set() }); return r; };
+  const room = (id) => { let r = rooms.get(id); if (!r) rooms.set(id, r = { id, name: '', members: new Map(), events: [], receipts: new Map(), typing: [], membership: 'join', created: 0, readUpTo: null, encrypted: false, reactions: new Map(), redacted: new Set(), edits: new Map() }); return r; };
   function applyState(r, ev) {
     if (ev.type === 'm.room.name') r.name = ev.content?.name || '';
     if (ev.type === 'm.room.encryption') r.encrypted = true;
@@ -44,6 +45,12 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
   function addTimeline(r, ev) {
     if (ev.state_key !== undefined) applyState(r, ev);
     if (ev.type === 'm.reaction') return addReaction(r, ev);
+    const rel = ev.content?.['m.relates_to'];
+    if (ev.type === 'm.room.message' && rel?.rel_type === 'm.replace' && rel.event_id) {   // an edit: keep the newest, by its sender only
+      const was = r.edits.get(rel.event_id);
+      if (!was || (was.origin_server_ts || 0) <= (ev.origin_server_ts || now())) r.edits.set(rel.event_id, ev);
+      return;
+    }
     if (ev.type === 'm.room.redaction') { r.redacted.add(ev.redacts || ev.content?.redacts); return; }
     if (!['m.room.message', 'm.room.member', 'm.room.name', 'm.room.create', 'm.room.encryption', 'm.room.encrypted'].includes(ev.type)) return;
     if (ev.unsigned?.transaction_id && ev.sender === user_id) { const i = r.events.findIndex((e) => e.txn === ev.unsigned.transaction_id); if (i >= 0) r.events.splice(i, 1); }
@@ -72,13 +79,13 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
       const plain = await unlock(roomId, ev); if (plain.locked) continue;
       const r = rooms.get(roomId); if (!r) continue;
       const i = r.events.findIndex((e) => e.event_id === eid);
-      if (plain.type === 'm.reaction') { if (i >= 0) r.events.splice(i, 1); addReaction(r, plain); }
+      if (plain.type === 'm.reaction' || plain.content?.['m.relates_to']?.rel_type === 'm.replace') { if (i >= 0) r.events.splice(i, 1); addTimeline(r, plain); }
       else if (i >= 0) r.events[i] = plain;
     }
   }
   async function handleSync(s) {
     if (crypto) await crypto.sync(s).catch(() => {});
-    for (const ev of s.account_data?.events || []) if (ev.type === 'm.direct') direct = ev.content || {};
+    for (const ev of s.account_data?.events || []) { if (ev.type === 'm.direct') direct = ev.content || {}; if (ev.type === 'io.jisst.starred' && !starBusy) starred = ev.content?.list || []; }   // stars: not while our own change is on its way
     for (const [id, j] of Object.entries(s.rooms?.join || {})) {
       const r = room(id); r.membership = 'join';
       for (const ev of j.state?.events || []) applyState(r, ev);
@@ -146,11 +153,22 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     if (ev.locked || ev.type === 'm.room.encrypted') return { ...base, kind: 'text', text: cryptoFailed ? 'Private message: open Jisste in a newer browser to read it' : 'Waiting for this message…', waiting: true, status: 'sent', card: null, reactions: [] };
     let status = 'sent';
     if (mine) { if (!ev.event_id) status = ev.failed ? 'failed' : 'sending'; else { const idx = r.events.indexOf(ev); for (const [u, eid] of r.receipts) if (u !== user_id && r.events.findIndex((e) => e.event_id === eid) >= idx) { status = 'read'; break; } } }
-    const kind = c.msgtype === 'm.image' ? 'image' : c.msgtype === 'm.audio' ? 'voice' : c.msgtype === 'm.notice' && !c['io.jisst.card'] ? 'text' : 'text';
-    if (c.file?.url) files.set(c.file.url, c.file);
+    // an edit by the same person replaces what the message says
+    const edit = ev.event_id && r.edits.get(ev.event_id), nc = edit && edit.sender === ev.sender && edit.content?.['m.new_content'];
+    const cc = nc ? { ...c, ...nc } : c;
+    const x = extras(cc);
+    if (cc.file?.url) files.set(cc.file.url, cc.file);
     const per = ev.event_id ? r.reactions.get(ev.event_id) : null;
-    const reactions = per ? [...per].map(([key, list]) => { const live = list.filter((x) => !r.redacted.has(x.event_id)); return { key, count: live.length, mine: live.some((x) => x.sender === user_id), names: live.map((x) => names.get(x.sender) || '') }; }).filter((x) => x.count) : [];
-    return { ...base, kind, text: c['io.jisst.text'] ?? c.body ?? '', card: c['io.jisst.card'] || null, url: c.url || c.file?.url || null, info: c.info || {}, status, local: ev.localUrl, private: !!ev.private || (mine && r.encrypted), reactions, call: c['io.jisst.call'] || null };
+    const live = per ? [...per].map(([key, list]) => [key, list.filter((v) => !r.redacted.has(v.event_id))]) : [];
+    const reactions = live.filter(([key, l]) => l.length && !key.startsWith(POLL)).map(([key, l]) => ({ key, count: l.length, mine: l.some((v) => v.sender === user_id), names: l.map((v) => names.get(v.sender) || '') }));
+    const poll = x.pollDef ? tally(x.pollDef, live.filter(([key]) => key.startsWith(POLL)).flatMap(([key, l]) => l.map((v) => ({ key, sender: v.sender }))), user_id) : null;
+    const rid = c['m.relates_to']?.['m.in_reply_to']?.event_id;
+    const target = rid && r.events.find((e) => e.event_id === rid);
+    const tv = target && target !== ev ? view(target, r) : null;
+    const replyTo = rid ? (tv ? { id: rid, senderName: tv.mine ? 'You' : tv.senderName, text: preview(tv) } : { id: rid, senderName: '', text: 'Earlier message' }) : null;
+    const text = cc['io.jisst.text'] ?? (rid ? String(cc.body || '').replace(/^(> .*\n)+\n?/, '') : cc.body) ?? '';
+    return { ...base, ...x, text, card: cc['io.jisst.card'] || null, url: cc.url || cc.file?.url || null, info: cc.info || {}, status, local: ev.localUrl, private: !!ev.private || (mine && r.encrypted), reactions, poll,
+      call: cc['io.jisst.call'] || null, replyTo, edited: !!nc, starred: starred.some((s) => s.room === r.id && s.id === ev.event_id) };
   }
   function summary(r) {
     const o = others(r), dm = isDirect(r.id) || (!r.name && o.length === 1);
@@ -162,7 +180,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     const readIdx = r.readUpTo ? r.events.findIndex((e) => e.event_id === r.readUpTo) : -1;
     r.events.forEach((e, i) => { if (i > readIdx && e.type === 'm.room.message' && e.sender !== user_id) unread++; });
     return { id: r.id, name, dm, encrypted: r.encrypted, favorite: !!r.tags?.['m.favourite'], agentId: other && agents.get(other.id)?.id || null, other: other?.id || null, members: [...r.members.values()].filter((m) => m.membership === 'join').map((m) => ({ ...m, agent: agents.has(m.id) })),
-      last: last ? { text: last.kind === 'image' ? 'Photo' : last.kind === 'voice' ? 'Voice message' : last.text, ts: last.ts, mine: last.mine, status: last.status, sender: last.senderName, notice: last.kind === 'notice' } : null,
+      last: last ? { text: last.kind === 'text' || last.kind === 'notice' ? last.text : preview(last), ts: last.ts, mine: last.mine, status: last.status, sender: last.senderName, notice: last.kind === 'notice' } : null,
       ts: last?.ts || r.created || 0, unread, typing: r.typing.map((u) => (names.get(u) || '').split(' ')[0]).filter(Boolean) };
   }
 
@@ -196,7 +214,56 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     room: (id) => (rooms.has(id) ? summary(rooms.get(id)) : null),
     timeline: (id) => { const r = rooms.get(id); return r ? r.events.map((e) => view(e, r)).filter(Boolean) : []; },
     name: (uid) => names.get(uid) || '',
-    send: (roomId, text, extra = {}) => sendContent(roomId, { msgtype: 'm.text', body: text, 'io.jisst.tz': tz, ...extra }),
+    /** A text message; `replyTo` (a message id) makes it an answer to that message. */
+    send(roomId, text, { replyTo } = {}) {
+      const rel = replyTo ? { 'm.relates_to': { 'm.in_reply_to': { event_id: replyTo } } } : {};
+      return sendContent(roomId, { msgtype: 'm.text', body: text, 'io.jisst.tz': tz, ...rel });
+    },
+    /** Change what one of your messages says (everyone sees "edited"). */
+    async edit(roomId, eventId, text) {
+      const r = room(roomId), ev = r.events.find((e) => e.event_id === eventId);
+      if (!ev || ev.sender !== user_id) throw new Error('You can only edit your own messages.');
+      const nc = { msgtype: 'm.text', body: text };
+      const content = { msgtype: 'm.text', body: '* ' + text, 'm.new_content': nc, 'm.relates_to': { rel_type: 'm.replace', event_id: eventId } };
+      r.edits.set(eventId, { sender: user_id, content, origin_server_ts: now() }); changed();
+      await put(roomId, 'm.room.message', content, `j${now()}.${n++}`);
+    },
+    /** Send a copy of a message to another chat, marked as forwarded. */
+    forward(toRoomId, fromRoomId, eventId) {
+      const r = rooms.get(fromRoomId), ev = r?.events.find((e) => e.event_id === eventId);
+      if (!ev) throw new Error("That message isn't here any more.");
+      const edit = r.edits.get(eventId), c = { ...(ev.content || {}), ...(edit?.content?.['m.new_content'] || {}) };
+      const { 'm.relates_to': _, 'io.jisst.tz': __, 'io.jisst.call': ___, ...copy } = c;
+      if (copy['io.jisst.poll']) { copy['io.jisst.poll'] = { ...copy['io.jisst.poll'] }; }
+      return sendContent(toRoomId, { ...copy, 'io.jisst.forwarded': true });
+    },
+    /** Starred messages are kept in your account, so they follow you to every phone. */
+    async star(roomId, eventId, on) {
+      starred = starred.filter((s) => !(s.room === roomId && s.id === eventId));
+      if (on) starred.unshift({ room: roomId, id: eventId, at: now() });
+      starred = starred.slice(0, 500); changed();
+      starBusy++;
+      try { await call('PUT', `${C}/user/${enc(user_id)}/account_data/io.jisst.starred`, { list: starred }); } finally { starBusy--; }
+    },
+    starred() {
+      return starred.map((s) => { const r = rooms.get(s.room), ev = r?.events.find((e) => e.event_id === s.id); return ev ? { roomId: s.room, roomName: summary(r).name, msg: view(ev, r) } : null; }).filter(Boolean);
+    },
+    sendContact: (roomId, who) => sendContent(roomId, contactContent(who)),
+    sendPoll: (roomId, question, options) => sendContent(roomId, pollContent(question, options)),
+    sendLocation: (roomId, place) => sendContent(roomId, locationContent(place)),
+    /** Vote in a poll (one vote each; the same option again takes it back). */
+    async vote(roomId, pollId, index) {
+      const r = room(roomId), per = r.reactions.get(pollId);
+      const old = per ? [...per].flatMap(([key, l]) => l.filter((v) => v.sender === user_id && !r.redacted.has(v.event_id) && key.startsWith(POLL)).map((v) => ({ key, ...v }))) : [];
+      for (const v of old) if (v.event_id) { r.redacted.add(v.event_id); call('PUT', `${C}/rooms/${enc(roomId)}/redact/${enc(v.event_id)}/j${now()}.${n++}`, {}).catch(() => {}); }
+      changed();
+      if (old.some((v) => v.key === POLL + index)) return;
+      const txn = `j${now()}.${n++}`, content = { 'm.relates_to': { rel_type: 'm.annotation', event_id: pollId, key: POLL + index } };
+      addReaction(r, { type: 'm.reaction', sender: user_id, content, txn }); changed();
+      const { event_id } = await put(roomId, 'm.reaction', content, txn);
+      const item = r.reactions.get(pollId)?.get(POLL + index)?.find((v) => v.txn === txn); if (item) item.event_id = event_id;
+      changed();
+    },
     async sendFile(roomId, file, kind, info = {}) {
       const localUrl = URL.createObjectURL(file), r = room(roomId);
       let where;
@@ -208,7 +275,8 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
         const up = await call('POST', `/_matrix/media/v3/upload?filename=${enc(file.name || kind)}`, undefined, file);
         where = { url: up.content_uri };
       }
-      return sendContent(roomId, { msgtype: kind === 'voice' ? 'm.audio' : 'm.image', body: kind === 'voice' ? 'Voice message' : (file.name || 'Photo'), ...where,
+      const msgtype = { voice: 'm.audio', image: 'm.image', video: 'm.video', file: 'm.file' }[kind] || 'm.file';
+      return sendContent(roomId, { msgtype, body: kind === 'voice' ? 'Voice message' : (file.name || (kind === 'image' ? 'Photo' : kind === 'video' ? 'Video' : 'File')), ...where,
         info: { mimetype: file.type, size: file.size, ...info }, ...(kind === 'voice' ? { 'org.matrix.msc3245.voice': {} } : {}) }, { localUrl });
     },
     /** React to a message with an emoji; the same emoji again takes it back. */

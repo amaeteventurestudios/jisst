@@ -7,10 +7,12 @@ import { AGENTS, SOON } from '../agents/index.js';
 import { BRAND, html, raw, esc, icon, avatar, when, hhmm, dayLabel, ago, linkify, toast, store } from './ui.js';
 import { calls, callBubble, callStates } from './calls.js';
 import { judge, known } from './safety.js';
+import { preview } from './content.js';
 
 const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const app = $('#app');
-const S = { engine: null, demo: false, tab: 'chats', room: null, view: null, q: '', space: '', agents: null, feed: null, feedErr: false, pick: [], gateway: null, installEvt: null, pushOn: store.get('push', false), tr: {} };
+const S = { compose: null, engine: null, demo: false, tab: 'chats', room: null, view: null, q: '', space: '', agents: null, feed: null, feedErr: false, pick: [], gateway: null, installEvt: null, pushOn: store.get('push', false), tr: {} };
 
 // ---------- theme ----------
 function applyTheme(t = store.get('theme', 'system')) { if (t === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; }
@@ -177,7 +179,7 @@ function side(soft = false) {
   if (soft && (S.view || ['feed', 'calls', 'you', 'agents'].includes(S.tab))) { if (S.view === 'info') el.innerHTML = String(viewInfo()); else if (!S.view && S.tab === 'agents') el.innerHTML = String(tabAgents()); return; }
   if (soft && S.tab === 'chats') { const list = $('#chatlist'); if (list) { list.innerHTML = String(chatRows()); return; } }
   const v = S.view;
-  el.innerHTML = String(v === 'new' ? viewNew() : v === 'group' ? viewGroup() : v === 'info' ? viewInfo() : v === 'make-agent' ? viewMakeAgent() : v === 'rename' ? viewRename()
+  el.innerHTML = String(v === 'starred' ? viewStarred() : v === 'new' ? viewNew() : v === 'group' ? viewGroup() : v === 'info' ? viewInfo() : v === 'make-agent' ? viewMakeAgent() : v === 'rename' ? viewRename()
     : S.tab === 'chats' ? tabChats() : S.tab === 'feed' ? tabFeed() : S.tab === 'agents' ? tabAgents() : S.tab === 'calls' ? tabCalls() : tabYou());
   if (S.tab === 'feed' && !v && !S.feed && !S.feedErr) loadFeed();
 }
@@ -275,6 +277,7 @@ function viewInfo() {
     ${ag ? html`<div class="pad"><div class="note">${ag.about}</div>${ag.commands?.length ? html`<div class="section" style="padding-left:0">Try saying</div><div class="btns">${ag.commands.map((c) => html`<button data-say="${c.replace(/ <[^>]+>| …/g, '')}">${c}</button>`)}</div>` : ''}</div>` : ''}
     ${!r.dm ? html`<div class="section">Members</div>${r.members.map((m) => html`<div class="row">${avatar({ id: m.id, name: m.name, agent: agentOf(m.id), size: 'sm' })}<span class="mid"><span class="l1"><span class="name">${m.id === S.engine.me.user_id ? 'You' : m.name}</span>${agentOf(m.id) ? html`<span class="tag">Agent</span>` : ''}</span></span></div>`)}
       <button class="set" data-act="add-member">${icon('plus')}<span class="mid">Add people or agents</span></button>` : ''}
+    <button class="set" data-act="find-info">${icon('search')}<span class="mid">Search this chat</span></button>
     <button class="set" data-act="fav">${icon('star')}<span class="mid">${r.favorite ? 'Remove from favorites' : 'Add to favorites'}</span></button>
     <button class="set" data-act="leave" style="color:var(--danger)">${icon('out')}<span class="mid">${r.dm ? 'Delete chat' : 'Leave group'}</span></button></div>`;
 }
@@ -340,6 +343,7 @@ function tabYou() {
   return html`${top('You')}<div class="scroll">
     <div class="me">${avatar({ id: me.user_id, name: me.name, size: 'lg' })}<h2>${me.name || 'You'}</h2><p>${handle ? '@' + handle : S.demo ? 'Demo account' : ''}</p></div>
     <button class="set" data-act="rename">${icon('pencil')}<span class="mid">Edit your name</span></button>
+    <button class="set" data-act="starred">${icon('star')}<span class="mid">Starred messages</span></button>
     ${standalone ? '' : html`<button class="set" data-act="install">${icon('download')}<span class="mid">Install ${BRAND.name}<small>${ios ? 'In Safari: Share, then Add to Home Screen' : 'Put it on your home screen like any app'}</small></span></button>`}
     <div class="set">${icon('eye')}<span class="mid">Blur explicit photos<small>Checked on this phone, so private chats stay private</small></span><button class="switch" role="switch" aria-checked="${store.get('safePhotos', true)}" aria-label="Blur explicit photos" data-act="safe-photos"></button></div>
     <div class="set">${icon('bell')}<span class="mid">Message alerts<small>${S.demo ? 'Works on the real app' : 'Get a notice when a message arrives'}</small></span><button class="switch" role="switch" aria-checked="${S.pushOn && !S.demo}" aria-label="Message alerts" data-act="push" ${S.demo ? 'disabled' : ''}></button></div>
@@ -372,8 +376,11 @@ function main() {
   el.innerHTML = String(html`<div class="chat" id="chat"><header class="top" id="chathead"></header>
     <div class="findbar" id="findbar" hidden><div class="fb"><label class="search">${icon('search')}<input id="findq" placeholder="Search this chat" autocomplete="off"></label><button type="button" class="iconbtn" data-act="find-close" aria-label="Close search">${icon('close')}</button></div><div class="hits" id="hits"></div></div>
     <div class="wall" id="wall" role="log" aria-label="Messages"></div>
+    <div class="composebar" id="composebar" hidden></div>
     <form class="composer" id="composer" data-form="send"><div class="box"><button type="button" class="iconbtn" data-act="emoji" aria-label="Emoji" title="Emoji">${icon('smile')}</button><textarea id="msg" rows="1" placeholder="Message" aria-label="Message" enterkeyhint="send"></textarea>
-    <label class="iconbtn" aria-label="Send a photo" title="Send a photo">${icon('camera')}<input type="file" accept="image/*" id="photo" hidden></label></div>
+    <button type="button" class="iconbtn" data-act="attach" aria-label="Attach" title="Attach">${icon('clip')}</button>
+    <label class="iconbtn" aria-label="Send a photo or video" title="Send a photo or video">${icon('camera')}<input type="file" accept="image/*,video/*" id="photo" hidden></label>
+    <input type="file" id="docfile" hidden></div>
     <button type="button" class="send" id="sendbtn" aria-label="Record a voice message">${icon('mic')}</button></form></div>`);
   chatUpdate(true);
   const ta = $('#msg');
@@ -392,12 +399,17 @@ function bubble(m, prev, r) {
   const first = !prev || prev.sender !== m.sender || prev.kind === 'notice' || m.ts - prev.ts > 10 * 60e3;
   const ag = m.agent ? agentOf(m.sender) : null;
   const from = !r.dm && !m.mine && first ? html`<div class="from" style="color:${ag?.color || 'var(--brand)'}">${m.senderName}${ag ? html`<span class="tag">Agent</span>` : ''}</div>` : '';
-  const meta = html`<span class="meta">${hhmm(m.ts)}${m.mine ? ticks(m.status) : ''}</span>`;
+  const meta = html`<span class="meta">${m.starred ? html`<span class="mstar" aria-label="Starred">${icon('star')}</span>` : ''}${m.edited ? html`<span class="edited">edited</span>` : ''}${hhmm(m.ts)}${m.mine ? ticks(m.status) : ''}</span>`;
   let content;
   if (m.kind === 'image') {
     const key = m.url || m.local || m.id, check = !m.mine && store.get('safePhotos', true), v = check ? known(key) : 'ok';
     content = html`<div class="photobox ${v === 'ok' ? '' : v === 'hide' ? 'hidden' : 'checking'}" data-key="${key}"><img class="photo" data-mxc="${m.url || ''}" src="${m.local || ''}" alt="Photo" ${v ? '' : raw('data-check="1"')}>${v === 'hide' ? html`<button type="button" class="showphoto" data-act="show-photo">This photo may be explicit. Show it</button>` : ''}</div>${meta}`;
   }
+  else if (m.kind === 'video') content = html`<video class="photo" controls playsinline preload="metadata" data-mxc="${m.url || ''}" src="${m.local || ''}"></video>${meta}`;
+  else if (m.kind === 'file') content = html`<button type="button" class="filecard" data-file="${m.url || m.local || ''}" data-name="${m.file.name}">${icon('doc')}<span><b>${m.file.name}</b><small>${fileSize(m.file.size)}${m.file.mimetype ? ' · ' + (m.file.mimetype.split('/')[1] || '').toUpperCase().slice(0, 8) : ''}</small></span>${icon('download')}</button>${meta}`;
+  else if (m.kind === 'contact') content = html`<div class="contactcard">${avatar({ id: m.contact.mxid, name: m.contact.name, size: 'sm' })}<span><b>${m.contact.name}</b><small>${m.contact.mxid}</small></span></div><button type="button" class="cardbtn" data-chatwith="${m.contact.mxid}">Message</button>${meta}`;
+  else if (m.kind === 'poll' && m.poll) content = html`<div class="poll"><b class="pq">${icon('poll')} ${m.poll.question}</b>${m.poll.options.map((o, i) => html`<button type="button" class="opt ${m.poll.mine === i ? 'on' : ''}" data-vote="${i}" data-mid="${m.id}"><span class="bar" style="width:${m.poll.total ? Math.round(100 * o.count / m.poll.total) : 0}%"></span><span class="ot">${o.text}</span><span class="oc">${o.count || ''}</span></button>`)}<small>${m.poll.total === 1 ? '1 vote' : m.poll.total + ' votes'}${m.poll.mine >= 0 ? ' · tap your choice again to take it back' : ''}</small></div>${meta}`;
+  else if (m.kind === 'location' && m.location) content = html`<div class="place"><div class="map" data-lat="${m.location.lat}" data-lon="${m.location.lon}" aria-label="Map"></div><span class="pl">${icon('pin')} ${m.location.label || `${m.location.lat.toFixed(4)}, ${m.location.lon.toFixed(4)}`}</span><a href="https://www.openstreetmap.org/?mlat=${m.location.lat}&mlon=${m.location.lon}#map=16/${m.location.lat}/${m.location.lon}" target="_blank" rel="noopener">Open the map</a></div>${meta}`;
   else if (m.kind === 'voice') content = html`<div class="voice"><button type="button" data-voice="${m.url || ''}" data-local="${m.local || ''}" aria-label="Play voice message">${icon('play')}</button><span class="bar"><i></i></span><small>${m.info?.duration ? fmtDur(m.info.duration / 1000) : ''}</small>${meta}</div>`;
   else content = html`<div class="txt">${linkify(m.text)}${meta}</div>`;
   const c = m.card;
@@ -406,8 +418,11 @@ function bubble(m, prev, r) {
   const reacts = m.reactions?.length ? html`<div class="reacts">${m.reactions.map((x) => html`<button type="button" class="react ${x.mine ? 'on' : ''}" data-react="${x.key}" data-mid="${m.id}" title="${x.names.filter(Boolean).join(', ')}">${x.key}${x.count > 1 ? html`<b>${x.count}</b>` : ''}</button>`)}</div>` : '';
   const more = m.deleted || m.status === 'sending' ? '' : html`<button type="button" class="msgmore" data-msgmenu="${m.id}" aria-label="React or more">${icon('smile')}</button>`;
   const tr = S.tr[m.id] ? html`<div class="trans ${S.tr[m.id].busy ? 'busy' : ''}" dir="auto"><small>${icon('translate')} ${S.tr[m.id].busy ? '' : 'Translated'}</small>${S.tr[m.id].text}</div>` : '';
-  return html`<div class="msg ${m.mine ? 'mine' : ''} ${first ? 'first' : ''} ${m.deleted ? 'deleted' : ''}" data-mid="${m.id}"><div class="bubble">${from}${m.call ? callBubble(m, S.callLive?.(m)) : content}${tr}${cardHtml}</div>${more}${reacts}${buttons}</div>`;
+  const fwd = m.forwarded ? html`<div class="fwd">${icon('forward')} Forwarded</div>` : '';
+  const quote = m.replyTo ? html`<button type="button" class="quote" data-hit="${m.replyTo.id}"><b>${m.replyTo.senderName}</b><span>${m.replyTo.text}</span></button>` : '';
+  return html`<div class="msg ${m.mine ? 'mine' : ''} ${first ? 'first' : ''} ${m.deleted ? 'deleted' : ''}" data-mid="${m.id}"><div class="bubble">${from}${fwd}${quote}${m.call ? callBubble(m, S.callLive?.(m)) : content}${tr}${cardHtml}</div>${more}${reacts}${buttons}</div>`;
 }
+const fileSize = (b) => (!b ? '' : b < 1e3 ? b + ' B' : b < 1e6 ? Math.round(b / 1e3) + ' KB' : (b / 1e6).toFixed(1) + ' MB');
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 function chatUpdate(initial = false) {
   const r = S.engine.room(S.room);
@@ -425,6 +440,8 @@ function chatUpdate(initial = false) {
     out.push(m.kind === 'notice' ? html`<div class="notice">${m.text}</div>` : bubble(m, msgs[i - 1], r));
   });
   wall.innerHTML = out.join('');
+  for (const v of wall.querySelectorAll('video[data-mxc]')) if (v.dataset.mxc && !v.getAttribute('src')) S.engine.media(v.dataset.mxc).then((u) => { v.src = u; }).catch(() => {});
+  if (wall.querySelector('.map')) maps(wall);
   for (const img of wall.querySelectorAll('img[data-mxc]')) if (img.dataset.mxc && !img.getAttribute('src')) S.engine.media(img.dataset.mxc).then((u) => { img.src = u; }).catch(() => {});
   for (const img of wall.querySelectorAll('img[data-check]')) {
     const box = img.closest('.photobox'), key = box.dataset.key;
@@ -443,10 +460,10 @@ function closeRoom() { S.room = null; side(); main(); }
 // ---------- sending ----------
 function composerState() { const has = $('#msg')?.value.trim(); const b = $('#sendbtn'); if (!b) return; b.innerHTML = String(icon(has ? 'send' : 'mic')); b.setAttribute('aria-label', has ? 'Send' : 'Record a voice message'); b.dataset.mode = has ? 'send' : 'mic'; }
 let typingT = 0;
-async function sendText(text) {
+async function sendText(text, opts = {}) {
   text = text.trim(); if (!text || !S.room) return;
   if (typingT) { typingT = 0; S.engine.typing(S.room, false); }
-  try { await S.engine.send(S.room, text); } catch (e) { toast("Couldn't send. Check your connection and try again."); }
+  try { await S.engine.send(S.room, text, opts); } catch (e) { toast("Couldn't send. Check your connection and try again."); }
 }
 async function startRecording() {
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast("Voice messages don't work in this browser.");
@@ -482,7 +499,17 @@ async function playVoice(btn) {
 // ---------- events ----------
 document.addEventListener('submit', (e) => {
   const f = e.target.closest('form[data-form]'); if (!f) return;
-  if (f.dataset.form === 'send') { e.preventDefault(); const ta = $('#msg'); const v = ta.value; ta.value = ''; ta.style.height = ''; composerState(); sendText(v); return; }
+  if (f.dataset.form === 'send') {
+    e.preventDefault(); const ta = $('#msg'); const v = ta.value; ta.value = ''; ta.style.height = ''; composerState();
+    const c = S.compose; S.compose = null; composeBar();
+    if (c?.mode === 'edit') { if (v.trim()) S.engine.edit(S.room, c.id, v.trim()).catch((err) => toast(err.message)); return; }
+    sendText(v, c?.mode === 'reply' ? { replyTo: c.id } : {}); return;
+  }
+  if (f.dataset.form === 'poll') {
+    e.preventDefault(); const q = f.q.value.trim(), opts = [...f.querySelectorAll('input[name="opt"]')].map((i) => i.value.trim()).filter(Boolean);
+    if (!q || opts.length < 2) return toast('A poll needs a question and at least two options.');
+    closeSheet(); S.engine.sendPoll(S.room, q, opts).catch((err) => toast(err.message)); return;
+  }
   onForm(f, e);
 });
 document.addEventListener('input', (e) => {
@@ -498,6 +525,17 @@ document.addEventListener('keydown', (e) => {
   if (e.target.id === 'msg' && e.key === 'Enter' && !e.shiftKey && (innerWidth >= 900 || !('ontouchstart' in window))) { e.preventDefault(); $('#composer').requestSubmit(); }
 });
 document.addEventListener('change', async (e) => {
+  if (['photo', 'docfile'].includes(e.target.id) && e.target.closest('#sheet')) { const f = e.target.files; const inp = $('#composer #photo'); closeSheet(); if (f[0] && inp) { const dt = new DataTransfer(); dt.items.add(f[0]); inp.files = dt.files; inp.dispatchEvent(new Event('change', { bubbles: true })); } return; }
+  if (e.target.id === 'docfile' && e.target.files[0]) {
+    const f = e.target.files[0]; e.target.value = '';
+    if (f.size > 20e6) return toast('That file is too big (20 MB at most).');
+    try { await S.engine.sendFile(S.room, f, f.type.startsWith('video/') ? 'video' : 'file'); } catch { toast("Couldn't send the file."); }
+  }
+  if (e.target.id === 'photo' && e.target.files[0]?.type.startsWith('video/')) {
+    const f = e.target.files[0]; e.target.value = '';
+    if (f.size > 20e6) return toast('That video is too big (20 MB at most). Try a shorter one.');
+    try { await S.engine.sendFile(S.room, f, 'video'); } catch { toast("Couldn't send the video."); }
+  }
   if (e.target.id === 'photo' && e.target.files[0]) {
     const f = e.target.files[0]; e.target.value = '';
     if (f.size > 20e6) return toast('That photo is too big (20 MB at most).');
@@ -514,6 +552,8 @@ document.addEventListener('click', async (e) => {
     if (d.tab === 'feed') { S.feed = null; S.feedErr = false; }
     side(); if (innerWidth < 900) main(); return;
   }
+  if (d.pick !== undefined && t.closest('#picker')) { t.setAttribute('aria-pressed', String(t.getAttribute('aria-pressed') !== 'true')); if (!PICK.many) return finishPick(); const n = $$('#picker [data-pick][aria-pressed="true"]').length; $('#pickgo').disabled = !n; $('#pickgo').textContent = n ? `Send to ${n}` : 'Send'; return; }
+  if (t.id === 'pickgo') return finishPick();
   if (d.room) return openRoom(d.room);
   if (d.say) {
     if (S.view === 'info') { const id = S.infoFor || S.room; S.view = null; S.infoFor = null; S.room = null; openRoom(id); }
@@ -531,10 +571,14 @@ document.addEventListener('click', async (e) => {
   if (d.joincall) { const m = S.engine.timeline(S.room).find((x) => x.id === d.joincall); if (m?.call) CALLS.join(S.room, m.call); return; }
   if (d.react && d.mid) { closeSheet(); return S.engine.react(S.room, d.mid, d.react).catch((err) => toast(err.message)); }
   if (d.msgmenu) return openSheet(d.msgmenu);
-  if (d.hit) { closeFind(false); return flash(d.hit); }
+  if (d.hit) { closeFind(false); if (d.sroom) { S.view = null; openRoom(d.sroom); setTimeout(() => flash(d.hit), 300); return; } return flash(d.hit); }
+  if (d.vote !== undefined && d.mid) return S.engine.vote(S.room, d.mid, +d.vote).catch((err) => toast(err.message));
+  if (d.chatwith) { if (d.chatwith === S.engine.me.user_id) return; try { const id = await S.engine.openDirect(d.chatwith); openSoon(id); } catch (err) { toast(err.message); } return; }
+  if (d.file !== undefined) { try { const u = await S.engine.media(d.file); const a = document.createElement('a'); a.href = u; a.download = d.name || 'file'; a.click(); } catch { toast("Couldn't open that file."); } return; }
   switch (d.act) {
     case 'fav': { const id = S.infoFor || S.room, r = S.engine.room(id); await S.engine.setFavorite(id, !r.favorite).catch((err) => toast(err.message)); return side(); }
     case 'call-voice': case 'call-video': return CALLS.start(S.room, d.act === 'call-video');
+    case 'find-info': { const id = S.infoFor || S.room; S.view = null; S.infoFor = null; if (innerWidth < 900) { S.room = null; openRoom(id); } else side(); setTimeout(openFind, 50); return; }
     case 'find': return openFind();
     case 'find-close': return closeFind(true);
     case 'emoji': return toggleEmoji();
@@ -555,6 +599,23 @@ document.addEventListener('click', async (e) => {
       catch (err) { delete S.tr[m.id]; toast(err.message); }
       return chatUpdate();
     }
+    case 'msg-reply': case 'msg-edit': {
+      const m = sheetMsg(); closeSheet(); if (!m) return;
+      S.compose = { mode: d.act === 'msg-edit' ? 'edit' : 'reply', id: m.id, who: m.mine ? 'You' : m.senderName, text: preview(m) };
+      composeBar();
+      const ta = $('#msg'); if (S.compose.mode === 'edit') { ta.value = m.text; composerState(); }
+      ta.focus(); return;
+    }
+    case 'compose-cancel': { const was = S.compose?.mode; S.compose = null; composeBar(); if (was === 'edit') { $('#msg').value = ''; composerState(); } return; }
+    case 'msg-forward': { const m = sheetMsg(); closeSheet(); if (!m) return; return openPicker('Forward to…', async (ids) => { for (const id of ids) await S.engine.forward(id, S.room, m.id).catch((err) => toast(err.message)); toast(ids.length > 1 ? `Forwarded to ${ids.length} chats` : 'Forwarded'); }, { many: true }); }
+    case 'msg-star': { const m = sheetMsg(); closeSheet(); if (m) S.engine.star(S.room, m.id, !m.starred).then(() => toast(m.starred ? 'Unstarred' : 'Starred')).catch((err) => toast(err.message)); return; }
+    case 'attach': return openAttach();
+    case 'att-doc': closeSheet(); return $('#docfile').click();
+    case 'att-contact': closeSheet(); return openPicker('Share a contact', async ([p]) => { await S.engine.sendContact(S.room, p).catch((err) => toast(err.message)); }, { people: true });
+    case 'att-poll': closeSheet(); return openPollForm();
+    case 'att-place': closeSheet(); return sharePlace();
+    case 'poll-add': { const box = $('#pollopts'); if (box.children.length < 12) box.insertAdjacentHTML('beforeend', String(html`<input name="opt" maxlength="80" placeholder="Option ${box.children.length + 1}">`)); return; }
+    case 'starred': S.view = 'starred'; return side();
     case 'msg-delete': { const m = sheetMsg(); closeSheet(); if (m) S.engine.remove(S.room, m.id).catch((err) => toast(err.message)); return; }
     case 'try-demo': S.demo = true; return welcome();
     case 'leave-demo': store.set('demoName', null); S.engine?.stop(); S.room = null; S.tab = 'chats'; return S.gateway ? (S.demo = false, welcome()) : welcome();
@@ -597,7 +658,11 @@ function openSheet(mid) {
   el.innerHTML = String(html`<button type="button" class="scrim" data-act="sheet-close" aria-label="Close"></button><div class="panel" role="dialog" aria-label="Message">
     <div class="quick">${QUICK.map((e) => html`<button type="button" data-react="${e}" data-mid="${mid}" aria-label="React ${e}">${e}</button>`)}<button type="button" data-act="more-emoji" aria-label="More emoji">${icon('plus')}</button></div>
     <div class="pick" id="sheetpick"></div>
-    ${m.text && !m.call ? html`<button type="button" class="set" data-act="msg-copy">${icon('copy')}<span class="mid">Copy</span></button>` : ''}
+    ${m.waiting ? '' : html`<button type="button" class="set" data-act="msg-reply">${icon('reply')}<span class="mid">Reply</span></button>`}
+    ${m.mine && m.kind === 'text' && !m.call && !m.card ? html`<button type="button" class="set" data-act="msg-edit">${icon('pencil')}<span class="mid">Edit</span></button>` : ''}
+    ${m.waiting || m.call ? '' : html`<button type="button" class="set" data-act="msg-forward">${icon('forward')}<span class="mid">Forward</span></button>`}
+    ${m.waiting ? '' : html`<button type="button" class="set" data-act="msg-star">${icon('star')}<span class="mid">${m.starred ? 'Unstar' : 'Star'}</span></button>`}
+    ${m.text && !m.call && m.kind === 'text' ? html`<button type="button" class="set" data-act="msg-copy">${icon('copy')}<span class="mid">Copy</span></button>` : ''}
     ${m.text && !m.call && S.gateway?.translate && !S.demo ? html`<button type="button" class="set" data-act="msg-translate">${icon('translate')}<span class="mid">${S.tr[m.id] ? 'Show the original' : 'Translate'}</span></button>` : ''}
     ${m.mine ? html`<button type="button" class="set" data-act="msg-delete" style="color:var(--danger)">${icon('trash')}<span class="mid">Delete for everyone</span></button>` : ''}</div>`);
   document.body.append(el);
@@ -651,6 +716,76 @@ function runFind(q) {
   hits.innerHTML = found.length ? String(html`${found.map((m) => html`<button type="button" class="hit" data-hit="${m.id}"><b>${m.mine ? 'You' : m.senderName}</b> <span>${m.text.slice(0, 120)}</span><small>${when(m.ts)}</small></button>`)}`) : String(html`<p class="nohit">Nothing found in the messages loaded on this phone.</p>`);
 }
 function flash(mid) { const el = $(`.msg[data-mid="${CSS.escape(mid)}"]`); if (!el) return; el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600); }
+
+// ---------- replying, attaching, picking chats ----------
+function composeBar() {
+  const b = $('#composebar'); if (!b) return;
+  const c = S.compose; b.hidden = !c;
+  b.innerHTML = c ? String(html`<div class="cb">${icon(c.mode === 'edit' ? 'pencil' : 'reply')}<span><b>${c.mode === 'edit' ? 'Edit message' : 'Reply to ' + c.who}</b><small>${c.text}</small></span></div><button type="button" class="iconbtn" data-act="compose-cancel" aria-label="Cancel">${icon('close')}</button>`) : '';
+}
+function sheet(inner, label) {
+  closeSheet();
+  const el = document.createElement('div'); el.className = 'sheet'; el.id = 'sheet';
+  el.innerHTML = String(html`<button type="button" class="scrim" data-act="sheet-close" aria-label="Close"></button><div class="panel" role="dialog" aria-label="${label}">${inner}</div>`);
+  document.body.append(el); return el;
+}
+function openAttach() {
+  sheet(html`<div class="attach">
+    <button type="button" data-act="att-doc"><span style="background:#5b3df5">${icon('doc')}</span>Document</button>
+    <label><span style="background:#e0567a">${icon('camera')}</span>Photo or video<input type="file" accept="image/*,video/*" id="photo" hidden></label>
+    <button type="button" data-act="att-contact"><span style="background:#0e7c86">${icon('you')}</span>Contact</button>
+    <button type="button" data-act="att-poll"><span style="background:#e08a00">${icon('poll')}</span>Poll</button>
+    <button type="button" data-act="att-place"><span style="background:#2f9e5b">${icon('pin')}</span>Location</button></div>`, 'Attach');
+}
+function openPollForm() {
+  sheet(html`<form data-form="poll" class="pollform"><h3>New poll</h3><div class="field"><label for="pq1">Question</label><input id="pq1" name="q" maxlength="200" placeholder="Where do we race on Saturday?" required></div>
+    <div id="pollopts" class="pollopts"><input name="opt" maxlength="80" placeholder="Option 1" required><input name="opt" maxlength="80" placeholder="Option 2" required></div>
+    <button type="button" class="btn ghost" data-act="poll-add">Add an option</button><button class="btn">Send poll</button></form>`, 'New poll');
+  $('#pq1').focus();
+}
+async function sharePlace() {
+  if (!navigator.geolocation) return toast("This browser can't share a location.");
+  toast('Finding where you are…');
+  navigator.geolocation.getCurrentPosition((p) => S.engine.sendLocation(S.room, { lat: p.coords.latitude, lon: p.coords.longitude }).catch((err) => toast(err.message)),
+    () => toast('Location is off or blocked for this site.'), { enableHighAccuracy: true, timeout: 15000 });
+}
+// One list to pick from: chats (to forward) or people (to share a contact)
+let PICK = {};
+function openPicker(title, done, { many = false, people = false } = {}) {
+  PICK = { done, many };
+  const items = people
+    ? [...new Map(S.engine.rooms().flatMap((r) => r.members).filter((m) => m.id !== S.engine.me.user_id).map((m) => [m.id, m])).values()].map((m) => ({ id: m.id, name: m.name || m.id, sub: m.agent ? 'Agent' : m.id, av: avatar({ id: m.id, name: m.name, agent: m.agent ? agentOf(m.id) : null, size: 'sm' }) }))
+    : S.engine.rooms().map((r) => ({ id: r.id, name: r.name, sub: r.dm ? (r.agentId ? 'Agent' : 'Chat') : 'Group', av: avatar({ id: r.other || r.id, name: r.name, agent: r.agentId ? agentOf(r.other) : null, group: !r.dm, size: 'sm' }) }));
+  sheet(html`<div id="picker" class="picker"><h3>${title}</h3><div class="plist">${items.length ? items.map((x) => html`<button type="button" class="row" data-pick="${x.id}" data-name="${x.name}" aria-pressed="false">${x.av}<span class="mid"><span class="name">${x.name}</span><span class="prev">${x.sub}</span></span>${many ? html`<span class="chk">${icon('tick')}</span>` : ''}</button>`) : html`<p class="empty">Nothing here yet.</p>`}</div>
+    ${many ? html`<button type="button" class="btn" id="pickgo" disabled>Send</button>` : ''}</div>`, title);
+}
+function finishPick() {
+  const chosen = $$('#picker [data-pick][aria-pressed="true"]').map((b) => ({ id: b.dataset.pick, mxid: b.dataset.pick, name: b.dataset.name }));
+  closeSheet(); if (!chosen.length) return;
+  PICK.done(PICK.many ? chosen.map((c) => c.id) : chosen);
+}
+function viewStarred() {
+  const list = S.engine.starred();
+  return html`${top('Starred messages', { back: true })}<div class="scroll">${list.length ? list.map(({ roomId, roomName, msg }) => html`<button type="button" class="hit" data-hit="${msg.id}" data-sroom="${roomId}"><b>${msg.mine ? 'You' : msg.senderName}${roomName !== msg.senderName ? ' · ' + roomName : ''}</b> <span>${preview(msg)}</span><small>${when(msg.ts)}</small></button>`)
+    : html`<div class="empty"><div class="big">${icon('star')}</div><h2>No starred messages</h2><p>Press and hold a message (or right-click it), then Star, to keep it here.</p></div>`}</div>`;
+}
+// Small maps for shared places: Leaflet (BSD) with OpenStreetMap's map, loaded the first time one is needed
+let leaflet = null;
+function maps(root) {
+  leaflet ||= new Promise((ok, no) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'vendor/leaflet/leaflet.css'; document.head.append(css);
+    const sc = document.createElement('script'); sc.src = 'vendor/leaflet/leaflet.js'; sc.onload = () => ok(window.L); sc.onerror = no; document.head.append(sc);
+  });
+  leaflet.then((L) => {
+    for (const el of root.querySelectorAll('.map:not(.leaflet-container)')) {
+      const at = [+el.dataset.lat, +el.dataset.lon];
+      const map = L.map(el, { zoomControl: false, attributionControl: true, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false }).setView(at, 15);
+      map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+      L.circleMarker(at, { radius: 8, color: '#fff', weight: 3, fillColor: '#5b3df5', fillOpacity: 1 }).addTo(map);
+    }
+  }).catch(() => {});
+}
 
 async function sendPrivacyDemo() { const id = await S.engine.openDirect(S.engine.agentMxid('jisst')); openSoon(id, () => sendText('privacy')); }
 function back() {
