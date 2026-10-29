@@ -1,0 +1,71 @@
+// Small helpers for the screens: safe HTML, icons, avatars, times.
+export const BRAND = { name: 'Jisst', site: 'https://jisst.app' };   // the one place the app's name and address live
+
+const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
+class Raw { constructor(s) { this.s = s; } toString() { return this.s; } }
+export const raw = (s) => new Raw(s);
+/** html`...` escapes every value unless it is raw() or an array of html`` results. */
+export function html(strings, ...vals) {
+  let out = strings[0];
+  vals.forEach((v, i) => { out += (v instanceof Raw ? v.s : Array.isArray(v) ? v.map((x) => (x instanceof Raw ? x.s : esc(x))).join('') : v == null || v === false ? '' : esc(v)) + strings[i + 1]; });
+  return raw(out);
+}
+
+const P = {
+  chats: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h0A1.5 1.5 0 0 1 4 14.5z"/>',
+  feed: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M7.5 8.5h9M7.5 12h9M7.5 15.5h5"/>',
+  agents: '<rect x="5" y="7" width="14" height="11" rx="3"/><path d="M12 7V4M9 12h.01M15 12h.01M9.5 15.2c1.4.9 3.6.9 5 0M3 11.5v3M21 11.5v3"/>',
+  calls: '<path d="M6.5 3.5h2.8l1.4 4-2 1.4a11 11 0 0 0 6.4 6.4l1.4-2 4 1.4v2.8a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.5 5.7a2 2 0 0 1 2-2.2z"/>',
+  you: '<circle cx="12" cy="8.5" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
+  back: '<path d="M15 5l-7 7 7 7"/>', pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>', search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+  send: '<path d="M4 12l16-8-6 16-2.5-6.5z"/><path d="M11.5 13.5L20 4"/>', mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>',
+  clip: '<path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7-7L13 4.5a3.3 3.3 0 0 1 4.7 4.7l-7.6 7.6a1.7 1.7 0 0 1-2.4-2.4l7-7"/>', camera: '<rect x="3" y="6.5" width="18" height="13" rx="3"/><circle cx="12" cy="13" r="3.5"/><path d="M8.5 6.5l1.5-2.5h4l1.5 2.5"/>',
+  tick: '<path d="M4 12.5l4.5 4.5L19 6.5"/>', ticks: '<path d="M2 12.5l4.5 4.5L17 6.5"/><path d="M11.5 15.5l1.5 1.5L23 6.5"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
+  group: '<circle cx="9" cy="9" r="3.5"/><path d="M2.5 19.5a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="8" r="2.8"/><path d="M16.5 13.2a5.5 5.5 0 0 1 5 5.3"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>', close: '<path d="M6 6l12 12M18 6L6 18"/>', more: '<circle cx="12" cy="5.5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="18.5" r="1.2"/>',
+  bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>', moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>', lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>', out: '<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/>',
+  code: '<path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/>', link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  play: '<path d="M8 5.5v13l10.5-6.5z"/>', pause: '<path d="M8.5 5v14M15.5 5v14"/>', trash: '<path d="M5 7h14M9.5 7V4.5h5V7M7 7l1 13h8l1-13"/>', heart: '<path d="M12 20s-7.5-4.6-7.5-10A4.5 4.5 0 0 1 12 7a4.5 4.5 0 0 1 7.5 3c0 5.4-7.5 10-7.5 10z"/>',
+  reply: '<path d="M10 8L4 13l6 5M4 13h10a6 6 0 0 1 6 6"/>', mail: '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M4 7l8 6 8-6"/>', spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/>',
+};
+export const icon = (name, cls = '') => raw(`<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name] || ''}</svg>`);
+
+const COLORS = ['#5b3df5', '#e0567a', '#0e7c86', '#e08a00', '#2f7d32', '#7b4bd1', '#c4302b', '#2465c9', '#a0522d', '#6d6875'];
+export function colorFor(id) { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; }
+export function initials(name) { const w = String(name || '?').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/); return ((w[0]?.[0] || '?') + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }
+export function avatar({ id, name, agent = null, group = false, size = '' }) {
+  const color = agent?.color || colorFor(id || name), text = agent?.glyph || initials(name);
+  return html`<span class="av ${size} ${agent ? 'agent' : ''} ${group ? 'group' : ''}" style="background:${color}" aria-hidden="true">${group ? icon('group') : text}</span>`;
+}
+
+export function hhmm(ts) { const d = new Date(ts); return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+export function when(ts) {
+  const d = new Date(ts), n = new Date(), day = 86400e3;
+  const start = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+  if (ts >= start) return hhmm(ts);
+  if (ts >= start - day) return 'Yesterday';
+  if (ts >= start - 6 * day) return d.toLocaleDateString([], { weekday: 'long' });
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === n.getFullYear() ? undefined : 'numeric' });
+}
+export function dayLabel(ts) {
+  const n = new Date(), start = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+  if (ts >= start) return 'Today'; if (ts >= start - 86400e3) return 'Yesterday';
+  return new Date(ts).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
+}
+export function ago(ts) {
+  const s = (Date.now() - new Date(ts).getTime()) / 1000;
+  if (s < 90) return 'just now'; if (s < 3600) return `${Math.round(s / 60)} min ago`; if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} d ago`;
+}
+/** Text with web addresses turned into links (everything else stays escaped). */
+export function linkify(text) {
+  return raw(esc(text).replace(/\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)\]]/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`));
+}
+let toastT;
+export function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3200); }
+export const store = {
+  get(k, d = null) { try { const v = localStorage.getItem('jisst.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { v == null ? localStorage.removeItem('jisst.' + k) : localStorage.setItem('jisst.' + k, JSON.stringify(v)); } catch {} },
+};
