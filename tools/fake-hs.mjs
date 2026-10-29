@@ -45,7 +45,7 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
 
   function sync(user, since, device) {
     const out = { next_batch: 's' + seq, rooms: { join: {}, invite: {}, leave: {} }, account_data: { events: [...(account.get(user) || new Map())].map(([type, content]) => ({ type, content })) },
-      to_device: { events: [] }, device_lists: { changed: [], left: [] } };
+      to_device: { events: [] }, device_lists: { changed: [], left: [] }, presence: { events: presenceFor(user) } };
     const s = since ? +String(since).slice(1) : null;
     const d = devices.get(user)?.get(device);
     if (d) { out.device_one_time_keys_count = { signed_curve25519: d.otks.size }; out.device_unused_fallback_key_types = d.fallback.size ? ['signed_curve25519'] : []; }
@@ -58,7 +58,7 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
       for (const room of rooms.values()) {
         const m = room.members.get(user);
         if (m === 'join') out.rooms.join[room.id] = { account_data: { events: [{ type: 'm.tag', content: { tags: tags.get(user + '\u0000' + room.id) || {} } }] }, summary: summary(room), state: { events: [...room.state.values()] }, timeline: { events: room.events.filter((e) => e.state_key === undefined).slice(-30), limited: true, prev_batch: 'p0' },
-          ephemeral: { events: [{ type: 'm.receipt', content: receiptContent(room) }] }, unread_notifications: { notification_count: 0 } };
+          ephemeral: { events: [{ type: 'm.receipt', content: receiptContent(room, user) }] }, unread_notifications: { notification_count: 0 } };
         if (m === 'invite') out.rooms.invite[room.id] = { invite_state: { events: [...room.state.values()] } };
       }
       return out;
@@ -73,16 +73,24 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
       const j = out.rooms.join[room.id] ||= { summary: summary(room), state: { events: [] }, timeline: { events: [] }, ephemeral: { events: [] } };
       if (e.ev?.type === 'm.room.member' && e.ev.state_key === user && e.ev.content.membership === 'join') j.state.events = [...room.state.values()];
       if (e.ev) j.timeline.events.push(e.ev);
-      if (e.receipt) j.ephemeral.events = [{ type: 'm.receipt', content: receiptContent(room) }];
+      if (e.receipt) j.ephemeral.events = [{ type: 'm.receipt', content: receiptContent(room, user) }];
       if (e.tags === user) j.account_data = { events: [{ type: 'm.tag', content: { tags: tags.get(user + '\u0000' + room.id) || {} } }] };
       if (e.typing) j.ephemeral.events.push({ type: 'm.typing', content: { user_ids: [...room.typing].filter(([, t]) => t > Date.now()).map(([u]) => u) } });
     }
     return out;
   }
-  function receiptContent(room) {
+  // read receipts: public ones for everyone, a private one (read ticks turned off) only for its owner
+  function receiptContent(room, user) {
     const c = {};
-    for (const [u, evId] of room.receipts) ((c[evId] ||= { 'm.read': {} })['m.read'][u] = { ts: Date.now() });
+    for (const [u, evId] of room.receipts) ((c[evId] ||= {})['m.read'] ||= {})[u] = { ts: Date.now() };
+    const mine = room.priv?.get(user); if (mine) ((c[mine] ||= {})['m.read.private'] ||= {})[user] = { ts: Date.now() };
     return c;
+  }
+  // presence: when each person's app last synced, unless they asked to be shown offline
+  const seen = new Map();   // user -> { at, hidden }
+  function presenceFor(user) {
+    const near = new Set(); for (const room of rooms.values()) if (room.members.get(user) === 'join') for (const u of members(room)) if (u !== user) near.add(u);
+    return [...near].filter((u) => seen.has(u)).map((u) => { const x = seen.get(u); return { type: 'm.presence', sender: u, content: x.hidden ? { presence: 'offline' } : { presence: Date.now() - x.at < 60e3 ? 'online' : 'offline', last_active_ago: Date.now() - x.at, currently_active: Date.now() - x.at < 60e3 } }; });
   }
 
   async function route(req, res) {
@@ -143,7 +151,7 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
       if (verb === 'send') { const [type, txn] = rest.split('/'); const ev = event(roomId, me, type, b); ev.unsigned = { transaction_id: txn }; room.receipts.set(me, ev.event_id); return json(res, 200, { event_id: ev.event_id }); }
       if (verb === 'redact') { const [target] = rest.split('/'); const ev = event(roomId, me, 'm.room.redaction', { redacts: target }); ev.redacts = target; return json(res, 200, { event_id: ev.event_id }); }
       if (verb === 'state') { const [type, key = ''] = rest.split('/'); const ev = event(roomId, me, type, b, key); return json(res, 200, { event_id: ev.event_id }); }
-      if (verb === 'receipt') { room.receipts.set(me, rest.split('/').pop()); bump({ room: roomId, receipt: true }); return json(res, 200, {}); }
+      if (verb === 'receipt') { const [type, evId] = rest.split('/'); if (type === 'm.read.private') (room.priv ||= new Map()).set(me, evId); else room.receipts.set(me, evId); bump({ room: roomId, receipt: true }); return json(res, 200, {}); }
       if (verb === 'read_markers') { if (b['m.read']) { room.receipts.set(me, b['m.read']); bump({ room: roomId, receipt: true }); } return json(res, 200, {}); }
       if (verb === 'typing') { room.typing.set(me, b.typing ? Date.now() + (b.timeout || 5000) : 0); bump({ room: roomId, typing: true }); return json(res, 200, {}); }
       if (verb === 'messages') { const evs = room.events.filter((e) => e.state_key === undefined); const before = u.searchParams.get('from') === 'p0' ? Math.max(0, evs.length - 30) : evs.length; const lim = +u.searchParams.get('limit') || 30;
@@ -205,9 +213,13 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
     }
     if (p === '/_matrix/client/v3/pushers/set') { const list = (pushers.get(me) || []).filter((x) => x.pushkey !== b.pushkey); if (b.kind) list.push(b); pushers.set(me, list); return json(res, 200, {}); }
     if (p === '/_matrix/media/v3/upload' || p === '/_matrix/client/v1/media/upload') { const mid = id(''); media.set(mid, { type: req.headers['content-type'] || 'application/octet-stream', data: raw }); return json(res, 200, { content_uri: `mxc://${serverName}/${mid}` }); }
+    if ((m = p.match(/^\/_matrix\/client\/v3\/presence\/([^/]+)\/status$/)) && req.method === 'PUT') {
+      seen.set(me, { at: Date.now(), hidden: b.presence === 'offline' }); for (const w of [...waiters]) w(); return json(res, 200, {});
+    }
     if (p === '/_matrix/client/v3/sync') {
       const since = u.searchParams.get('since'), timeout = Math.min(+u.searchParams.get('timeout') || 0, 30000);
       const myDevice = deviceOf.get(String(req.headers.authorization || '').replace(/^Bearer /, ''));
+      seen.set(me, { at: Date.now(), hidden: u.searchParams.get('set_presence') === 'offline' });
       let out = sync(me, since, myDevice);
       const empty = (o) => !Object.keys(o.rooms.join).length && !Object.keys(o.rooms.invite).length && !Object.keys(o.rooms.leave).length && !o.to_device.events.length && !o.device_lists.changed.length;
       if (since && empty(out) && timeout > 0) {

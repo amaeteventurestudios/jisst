@@ -16,6 +16,8 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
   const rooms = new Map();                       // id -> room
   const subs = new Set();
   let direct = {}, since = null, stopped = false, names = new Map(), blobs = new Map(), ready = false, starred = [], starBusy = 0, muted = new Set(), blocked = new Set();
+  let privacy = { lastSeen: true, readTicks: true }, privacyBusy = 0;
+  const presence = new Map();                    // user -> { online, at }  (at: when they were last seen, ms)
   const me = { user_id, name: '' };
   let crypto = null, cryptoFailed = false;
 
@@ -84,11 +86,17 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
       else if (i >= 0) r.events[i] = plain;
     }
   }
+  // your public and private read marks can both come back: keep the later one
+  const later = (r, a, b) => { if (!b) return true; const i = r.events.findIndex((e) => e.event_id === a), j = r.events.findIndex((e) => e.event_id === b); return i < 0 && j < 0 ? true : i >= j; };
   async function handleSync(s) {
     if (crypto) await crypto.sync(s).catch(() => {});
     for (const ev of s.account_data?.events || []) { if (ev.type === 'm.direct') direct = ev.content || {}; if (ev.type === 'io.jisst.starred' && !starBusy) starred = ev.content?.list || [];
       if (ev.type === 'm.push_rules') muted = new Set((ev.content?.global?.room || []).filter((x) => x.enabled !== false && !(x.actions || []).includes('notify')).map((x) => x.rule_id));
-      if (ev.type === 'm.ignored_user_list') blocked = new Set(Object.keys(ev.content?.ignored_users || {})); }   // stars: not while our own change is on its way
+      if (ev.type === 'm.ignored_user_list') blocked = new Set(Object.keys(ev.content?.ignored_users || {}));
+      if (ev.type === 'io.jisst.privacy' && !privacyBusy) privacy = { lastSeen: ev.content?.lastSeen !== false, readTicks: ev.content?.readTicks !== false }; }
+    for (const ev of s.presence?.events || []) if (ev.type === 'm.presence' && ev.sender !== user_id) {
+      const c = ev.content || {}; presence.set(ev.sender, { online: c.presence === 'online' || !!c.currently_active, at: c.last_active_ago != null ? now() - c.last_active_ago : 0 });
+    }   // stars: not while our own change is on its way
     for (const [id, j] of Object.entries(s.rooms?.join || {})) {
       const r = room(id); r.membership = 'join';
       for (const ev of j.state?.events || []) applyState(r, ev);
@@ -99,7 +107,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
       }
       for (const ev of j.ephemeral?.events || []) {
         if (ev.type === 'm.typing') r.typing = (ev.content?.user_ids || []).filter((u) => u !== user_id);
-        if (ev.type === 'm.receipt') for (const [eid, rc] of Object.entries(ev.content || {})) for (const u of Object.keys(rc['m.read'] || {})) { r.receipts.set(u, eid); if (u === user_id) r.readUpTo = eid; }
+        if (ev.type === 'm.receipt') for (const [eid, rc] of Object.entries(ev.content || {})) for (const t of ['m.read', 'm.read.private']) for (const u of Object.keys(rc[t] || {})) { if (t === 'm.read') r.receipts.set(u, eid); if (u === user_id && later(r, eid, r.readUpTo)) r.readUpTo = eid; }
       }
       for (const ev of j.account_data?.events || []) if (ev.type === 'm.tag') r.tags = ev.content?.tags || {};
       if (j.summary?.['m.joined_member_count'] != null) r.count = j.summary['m.joined_member_count'] + (j.summary['m.invited_member_count'] || 0);
@@ -127,8 +135,9 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     await startCrypto();
     while (!stopped) {
       try {
-        const filter = enc(JSON.stringify({ room: { timeline: { limit: 30 }, state: { lazy_load_members: false } }, presence: { not_types: ['*'] } }));
-        const s = await call('GET', `${C}/sync?filter=${filter}&timeout=${since ? 30000 : 0}${since ? '&since=' + enc(since) : ''}`);
+        const filter = enc(JSON.stringify({ room: { timeline: { limit: 30 }, state: { lazy_load_members: false } }, presence: { types: ['m.presence'] } }));
+        // hiding last seen also hides you from the online list (Matrix shows 'offline' to everyone)
+        const s = await call('GET', `${C}/sync?filter=${filter}&set_presence=${privacy.lastSeen ? 'online' : 'offline'}&timeout=${since ? 30000 : 0}${since ? '&since=' + enc(since) : ''}`);
         await handleSync(s); since = s.next_batch; ready = true; changed();
       } catch (e) {
         if (e.status === 401) { stopped = true; for (const f of subs) f({ signedOut: true }); return; }
@@ -158,7 +167,8 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     if (ev.event_id && r.redacted.has(ev.event_id)) return { ...base, kind: 'text', text: 'This message was deleted', deleted: true, status: 'sent', card: null, reactions: [] };
     if (ev.locked || ev.type === 'm.room.encrypted') return { ...base, kind: 'text', text: cryptoFailed ? 'Private message: open Jisste in a newer browser to read it' : 'Waiting for this message…', waiting: true, status: 'sent', card: null, reactions: [] };
     let status = 'sent';
-    if (mine) { if (!ev.event_id) status = ev.failed ? 'failed' : 'sending'; else { const idx = r.events.indexOf(ev); for (const [u, eid] of r.receipts) if (u !== user_id && r.events.findIndex((e) => e.event_id === eid) >= idx) { status = 'read'; break; } } }
+    // read ticks work both ways, as in other chat apps: switch yours off and you don't see other people's either
+    if (mine) { if (!ev.event_id) status = ev.failed ? 'failed' : 'sending'; else if (privacy.readTicks) { const idx = r.events.indexOf(ev); for (const [u, eid] of r.receipts) if (u !== user_id && r.events.findIndex((e) => e.event_id === eid) >= idx) { status = 'read'; break; } } }
     // an edit by the same person replaces what the message says
     const edit = ev.event_id && r.edits.get(ev.event_id), nc = edit && edit.sender === ev.sender && edit.content?.['m.new_content'];
     const cc = nc ? { ...c, ...nc } : c;
@@ -339,6 +349,17 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
       return call('PUT', `${C}/user/${enc(user_id)}/account_data/m.ignored_user_list`, { ignored_users: Object.fromEntries([...blocked].map((u) => [u, {}])) });
     },
     blocked: () => [...blocked].map((id) => ({ id, name: names.get(id) || id })),
+    /** Privacy: last seen and read ticks, kept in account data so every phone you use follows it. */
+    privacy: () => ({ ...privacy }),
+    async setPrivacy(p) {
+      privacy = { ...privacy, ...p }; privacyBusy++; changed();
+      try {
+        await call('PUT', `${C}/user/${enc(user_id)}/account_data/io.jisst.privacy`, privacy);
+        await call('PUT', `${C}/presence/${enc(user_id)}/status`, { presence: privacy.lastSeen ? 'online' : 'offline' }).catch(() => {});
+      } finally { privacyBusy--; }
+    },
+    /** { online, at } for a person, or null when they hide it (or you hide yours: last seen works both ways too). */
+    presenceOf(uid) { const p = privacy.lastSeen && presence.get(uid); return p && (p.online || p.at) ? { ...p } : null; },
     /** Report a message to the people who run Jisste. */
     report: (roomId, eventId, reason) => call('POST', `${C}/rooms/${enc(roomId)}/report/${enc(eventId)}`, { reason: String(reason).slice(0, 500), score: -100 }),
     /** Favorites are a Matrix room tag, so they follow you to every phone. */
@@ -370,7 +391,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
       const last = [...r.events].reverse().find((e) => e.event_id && e.sender !== user_id);
       if (!last || r.readUpTo === last.event_id) return;
       r.readUpTo = last.event_id; changed();
-      call('POST', `${C}/rooms/${enc(roomId)}/receipt/m.read/${enc(last.event_id)}`, {}).catch(() => {});
+      call('POST', `${C}/rooms/${enc(roomId)}/receipt/${privacy.readTicks ? 'm.read' : 'm.read.private'}/${enc(last.event_id)}`, {}).catch(() => {});
     },
     typing(roomId, on) { call('PUT', `${C}/rooms/${enc(roomId)}/typing/${enc(user_id)}`, on ? { typing: true, timeout: 6000 } : { typing: false }).catch(() => {}); },
     /** One-to-one chat with a person or an agent; reuses the chat you already have. */

@@ -95,3 +95,26 @@ test('mute, pin, archive, disappearing messages, block and report', async () => 
   await ada.block('@tunde:jisste.com', false);
   await ada.setDisappear(roomId, 0);
 });
+
+test('online and last seen can be hidden, and read ticks can be turned off (both ways)', async () => {
+  await until(() => ada.presenceOf('@tunde:jisste.com')?.online);
+  await tunde.setPrivacy({ lastSeen: false });
+  await tunde.send(roomId, 'Going quiet');
+  await until(() => ada.timeline(roomId).some((m) => m.text === 'Going quiet') && !ada.presenceOf('@tunde:jisste.com'));
+  await until(() => tunde.presenceOf('@ada:jisste.com') === null);   // hiding yours hides theirs from you
+  await tunde.setPrivacy({ lastSeen: true });
+
+  await tunde.setPrivacy({ readTicks: false });
+  await ada.send(roomId, 'Did you read this?');
+  await theirs((m) => m.text === 'Did you read this?');
+  tunde.markRead(roomId);
+  await ada.send(roomId, 'ping');
+  await theirs((m) => m.text === 'ping');
+  await wait(800);
+  assert.equal(ada.timeline(roomId).find((m) => m.text === 'Did you read this?').status, 'sent');   // no blue ticks
+  assert.equal(tunde.room(roomId).unread, 1);                                                          // but tunde's own phone knows what he read
+  await tunde.setPrivacy({ readTicks: true });
+  tunde.markRead(roomId);
+  await until(() => ada.timeline(roomId).find((m) => m.text === 'ping').status === 'read');
+  assert.equal(tunde.privacy().readTicks, true);
+});

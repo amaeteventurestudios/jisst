@@ -36,6 +36,7 @@ export function demoEngine({ name = 'You' } = {}) {
   const rooms = new Map(), subs = new Set(), reminders = [];
   let starred = [];
   const blocked = new Set(), muted = new Set();
+  let privacy = { lastSeen: true, readTicks: true };
   let n = 0;
   const changed = () => { for (const f of subs) f(); };
   const ev = (sender, text, ago, extra = {}) => ({ id: 'e' + n++, sender, text, ts: t0 - ago, ...extra });
@@ -85,7 +86,7 @@ export function demoEngine({ name = 'You' } = {}) {
     const t = e.replyTo && r.events.find((y) => y.id === e.replyTo), tv = t ? view(r, t) : null;
     return { ...base, agent: agentIds.has(e.sender), ...x,
       text: e.notice ? `${e.sender === me.user_id ? 'You' : names.get(e.sender)} ${e.text}` : e.text, card: e.card || null, url: e.url || null, local: e.url, info: e.info || {},
-      status: e.sender !== me.user_id ? 'sent' : r.events.slice(r.events.indexOf(e) + 1).some((y) => y.sender !== me.user_id && !y.notice) ? 'read' : 'sent',
+      status: e.sender !== me.user_id || !privacy.readTicks ? 'sent' : r.events.slice(r.events.indexOf(e) + 1).some((y) => y.sender !== me.user_id && !y.notice) ? 'read' : 'sent',
       private: isPrivate(r), call: e.call || null, edited: !!e.edited, starred: starred.some((s) => s.room === r.id && s.id === e.id),
       replyTo: tv ? { id: tv.id, senderName: tv.mine ? 'You' : tv.senderName, text: preview(tv) } : null,
       poll: x.pollDef ? tally(x.pollDef, [...(e.votes || new Map())].map(([sender, i]) => ({ sender, key: POLL + i })), me.user_id) : null,
@@ -150,6 +151,10 @@ export function demoEngine({ name = 'You' } = {}) {
     async setDisappear(roomId, seconds) { const r = rooms.get(roomId); r.disappear = seconds; push(r, { ...ev(me.user_id, seconds ? `turned on disappearing messages: new messages go after ${seconds >= 86400 * 60 ? '90 days' : seconds >= 86400 * 7 ? '1 week' : '24 hours'}` : 'turned off disappearing messages', 0), notice: true }); },
     async block(uid, on) { if (on) blocked.add(uid); else blocked.delete(uid); changed(); },
     blocked: () => [...blocked].map((id) => ({ id, name: names.get(id) || id })),
+    privacy: () => ({ ...privacy }),
+    async setPrivacy(p) { privacy = { ...privacy, ...p }; changed(); },
+    // agents are always online; people in the demo were seen a little while ago
+    presenceOf(uid) { if (!privacy.lastSeen || !names.has(uid)) return null; return agentIds.has(uid) ? { online: true, at: Date.now() } : { online: false, at: Date.now() - 1000 * 60 * (17 + (uid.length * 7) % 90) }; },
     async report() {},
     markRead(roomId) { const r = rooms.get(roomId); if (r && r.read !== r.events.length - 1) { r.read = r.events.length - 1; changed(); } },
     typing() {},

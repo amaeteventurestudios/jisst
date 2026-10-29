@@ -358,6 +358,8 @@ function tabYou() {
     <button class="set" data-act="starred">${icon('star')}<span class="mid">Starred messages</span></button>
     <button class="set" data-act="blocked">${icon('block')}<span class="mid">Blocked people</span></button>
     ${standalone ? '' : html`<button class="set" data-act="install">${icon('download')}<span class="mid">Install ${BRAND.name}<small>${ios ? 'In Safari: Share, then Add to Home Screen' : 'Put it on your home screen like any app'}</small></span></button>`}
+    <div class="set">${icon('clock')}<span class="mid">Last seen and online<small>Off: nobody sees when you're on, and you don't see theirs</small></span><button class="switch" role="switch" aria-checked="${S.engine.privacy().lastSeen}" aria-label="Last seen and online" data-act="priv-seen"></button></div>
+    <div class="set">${icon('ticks')}<span class="mid">Read ticks<small>Off: people don't see when you've read, and you don't see theirs</small></span><button class="switch" role="switch" aria-checked="${S.engine.privacy().readTicks}" aria-label="Read ticks" data-act="priv-ticks"></button></div>
     <div class="set">${icon('eye')}<span class="mid">Blur explicit photos<small>Checked on this phone, so private chats stay private</small></span><button class="switch" role="switch" aria-checked="${store.get('safePhotos', true)}" aria-label="Blur explicit photos" data-act="safe-photos"></button></div>
     <div class="set">${icon('bell')}<span class="mid">Message alerts<small>${S.demo ? 'Works on the real app' : 'Get a notice when a message arrives'}</small></span><button class="switch" role="switch" aria-checked="${S.pushOn && !S.demo}" aria-label="Message alerts" data-act="push" ${S.demo ? 'disabled' : ''}></button></div>
     <div class="set">${icon('moon')}<span class="mid">Appearance</span><span class="seg">${['system', 'light', 'dark'].map((t) => html`<button data-theme="${t}" aria-pressed="${theme === t}">${t[0].toUpperCase() + t.slice(1)}</button>`)}</span></div>
@@ -401,9 +403,14 @@ function main() {
   const ta = $('#msg');
   if (innerWidth >= 900) ta?.focus();
 }
+function seenText(p) {
+  if (!p) return '';
+  if (p.online) return 'online';
+  return p.at ? `last seen ${dayLabel(p.at) === 'Today' ? 'today' : dayLabel(p.at) === 'Yesterday' ? 'yesterday' : new Date(p.at).toLocaleDateString([], { day: 'numeric', month: 'short' })} at ${hhmm(p.at)}` : '';
+}
 function chatHead(r) {
   const ag = r.agentId ? agentOf(r.other) : null;
-  const sub = r.typing.length ? html`<small class="typing">${r.dm ? 'typing…' : r.typing[0] + ' is typing…'}</small>` : html`<small>${r.encrypted ? html`<span class="lockt">${icon('lock')}</span>` : ''}${ag ? `Agent · ${ag.kind}` : r.dm ? (r.encrypted ? 'Private chat' : 'tap for info') : r.members.map((m) => (m.id === S.engine.me.user_id ? 'You' : m.name.split(' ')[0])).join(', ')}</small>`;
+  const sub = r.typing.length ? html`<small class="typing">${r.dm ? 'typing…' : r.typing[0] + ' is typing…'}</small>` : html`<small>${r.encrypted ? html`<span class="lockt">${icon('lock')}</span>` : ''}${ag ? `Agent · ${ag.kind}` : r.dm ? seenText(S.engine.presenceOf?.(r.other)) || (r.encrypted ? 'Private chat' : 'tap for info') : r.members.map((m) => (m.id === S.engine.me.user_id ? 'You' : m.name.split(' ')[0])).join(', ')}</small>`;
   return html`<button class="iconbtn" data-act="close-chat" aria-label="Back to chats">${icon('back')}</button>
     <button class="who" data-act="info">${avatar({ id: r.other || r.id, name: r.name, agent: ag, group: !r.dm, size: 'sm' })}<span class="t"><b>${r.name}</b>${sub}</span></button>
     ${r.agentId ? '' : html`<button class="iconbtn" data-act="call-voice" aria-label="Voice call" title="Voice call">${icon('calls')}</button><button class="iconbtn" data-act="call-video" aria-label="Video call" title="Video call">${icon('video')}</button>`}
@@ -664,6 +671,10 @@ document.addEventListener('click', async (e) => {
     case 'rename': S.view = 'rename'; return side();
     case 'install': if (S.installEvt) { S.installEvt.prompt(); S.installEvt = null; } else toast(/iphone|ipad/i.test(navigator.userAgent) ? 'In Safari, tap Share, then Add to Home Screen.' : 'Use your browser menu: Install app, or Add to Home Screen.'); return;
     case 'show-photo': { const b = t.closest('.photobox'); b.classList.remove('hidden'); t.remove(); return; }
+    case 'priv-seen': case 'priv-ticks': {
+      const on = t.getAttribute('aria-checked') !== 'true'; t.setAttribute('aria-checked', String(on));
+      S.engine.setPrivacy(d.act === 'priv-seen' ? { lastSeen: on } : { readTicks: on }).catch(() => toast('That didn\'t save. Try again.')); return;
+    }
     case 'safe-photos': { const on = t.getAttribute('aria-checked') !== 'true'; store.set('safePhotos', on); t.setAttribute('aria-checked', String(on)); return; }
     case 'push': { const on = t.getAttribute('aria-checked') !== 'true';
       if (on) { try { S.pushOn = await enablePush(); } catch { S.pushOn = false; toast("Couldn't turn alerts on."); } }
