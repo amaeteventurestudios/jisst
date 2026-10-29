@@ -109,7 +109,7 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
     if (p === '/_matrix/client/v3/login') {
       const user = uid(b.identifier?.user || ''), rec = users.get(user);
       if (!rec || rec.pw !== b.password) return err(res, 403, 'M_FORBIDDEN', 'Invalid password');
-      const t = id('syt_'), d = b.device_id || id('D'); tokens.set(t, user); deviceOf.set(t, d); dev(user, d);
+      const t = id('syt_'), d = b.device_id || id('D'); tokens.set(t, user); deviceOf.set(t, d); dev(user, d).name = b.initial_device_display_name || dev(user, d).name || ''; dev(user, d).seen = Date.now();
       return json(res, 200, { user_id: user, access_token: t, device_id: d });
     }
     const me = tokens.get(String(req.headers.authorization || '').replace(/^Bearer /, '') || u.searchParams.get('access_token'));
@@ -119,7 +119,7 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
       res.writeHead(200, { 'content-type': f.type, 'access-control-allow-origin': '*' }); return res.end(f.data);
     }
     if (!me) return err(res, 401, 'M_MISSING_TOKEN', 'Sign in');
-    if (p === '/_matrix/client/v3/account/whoami') return json(res, 200, { user_id: me });
+    if (p === '/_matrix/client/v3/account/whoami') return json(res, 200, { user_id: me, device_id: deviceOf.get(String(req.headers.authorization || '').replace(/^Bearer /, '')) });
     if (p === '/_matrix/client/v3/logout') { tokens.delete(String(req.headers.authorization).slice(7)); return json(res, 200, {}); }
     if ((m = p.match(/^\/_matrix\/client\/v3\/profile\/([^/]+)\/displayname$/))) {
       if (req.method === 'PUT') { users.get(me).name = b.displayname; for (const r of rooms.values()) if (r.members.get(me) === 'join') event(r.id, me, 'm.room.member', { membership: 'join', displayname: b.displayname }, me); return json(res, 200, {}); }
@@ -223,6 +223,14 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
       seen.set(me, { at: Date.now(), hidden: b.presence === 'offline' }); for (const w of [...waiters]) w(); return json(res, 200, {});
     }
     // chat backup (room_keys): one current backup version per person, keys stored as the phone sent them (locked)
+    // devices: the list, and signing one out (needs the password, as on a real server)
+    if (p === '/_matrix/client/v3/devices') return json(res, 200, { devices: [...(devices.get(me) || [])].map(([device_id, d]) => ({ device_id, display_name: d.name || null, last_seen_ts: d.seen || null })) });
+    if ((m = p.match(/^\/_matrix\/client\/v3\/devices\/([^/]+)$/)) && req.method === 'DELETE') {
+      if (b.auth?.type !== 'm.login.password' || users.get(me)?.pw !== b.auth.password) return json(res, 401, { flows: [{ stages: ['m.login.password'] }], session: id('uia'), params: {} });
+      const gone = decodeURIComponent(m[1]); devices.get(me)?.delete(gone);
+      for (const [t, d] of deviceOf) if (d === gone && tokens.get(t) === me) { tokens.delete(t); deviceOf.delete(t); }
+      return json(res, 200, {});
+    }
     if (p === '/_matrix/client/v3/room_keys/version') {
       const kb = keyBackups.get(me);
       if (req.method === 'POST') { const v = String((kb?.n || 0) + 1); keyBackups.set(me, { n: +v, version: v, algorithm: b.algorithm, auth_data: b.auth_data, rooms: {} }); return json(res, 200, { version: v }); }

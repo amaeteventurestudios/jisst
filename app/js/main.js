@@ -8,6 +8,7 @@ import { BRAND, html, raw, esc, icon, avatar, when, hhmm, dayLabel, ago, linkify
 import { calls, callBubble, callStates } from './calls.js';
 import { judge, known } from './safety.js';
 import { preview } from './content.js';
+import { qrSvg, scan } from './link.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -53,6 +54,8 @@ function startLive(chat, fresh = false) {
   if (S.pushOn) enablePush(true).catch(() => {});
   if (fresh) greet();
   // opened from a message alert
+  const lk = /^#link=([\w-]+)$/.exec(location.hash);
+  if (lk) { history.replaceState(null, '', location.pathname + location.search); if (confirm(`Link a computer to your ${BRAND.name}? Only say yes if you just scanned the code on your own computer.`)) approveLink(lk[1]); }
   const m = /^#room=(.+)$/.exec(location.hash); if (m) { history.replaceState(null, '', location.pathname + location.search); openSoon(decodeURIComponent(m[1])); }
 }
 // a brand-new account starts with a chat with the Jisste helper instead of an empty list
@@ -105,9 +108,59 @@ function welcome(step = 'start', data = {}) {
       <div class="field"><label for="ph">@handle</label><input id="ph" name="handle" maxlength="20" pattern="[A-Za-z0-9_]{3,20}" placeholder="ada_obi" required></div>
       ${data.err ? html`<p class="err">${data.err}</p>` : ''}<button class="btn">Done</button></form>`;
   }
-  app.innerHTML = String(html`${demoBar()}<main class="welcome"><div class="inner">${body}</div></main>`);
+  const linkCard = !S.demo && S.gateway && step === 'start' && innerWidth >= 900;
+  app.innerHTML = String(html`${demoBar()}<main class="welcome ${linkCard ? 'withlink' : ''}"><div class="inner">${body}</div>${linkCard ? html`<aside class="linkcard" id="linkcard"><h2>Use ${BRAND.name} on this computer</h2>
+    <ol><li>Open ${BRAND.name} on your phone</li><li>Go to <b>You</b>, then <b>Linked computers</b></li><li>Tap <b>Link a computer</b> and point your phone at this code</li></ol>
+    <div class="qr" id="qr"><span class="spin"></span></div><p class="fine" id="qrshort"></p></aside>` : ''}</main>`);
+  if (linkCard) showLinkCode(); else stopLinkCode();
   $('input', app)?.focus();
 }
+// ---------- link this computer by QR code ----------
+let linkT = 0;
+function stopLinkCode() { clearTimeout(linkT); linkT = 0; }
+async function showLinkCode() {
+  stopLinkCode();
+  const box = $('#qr'); if (!box) return;
+  const ua = navigator.userAgent, device = `${/Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'a browser'} on ${/Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'a computer'}`;
+  let l;
+  try { l = await api.linkStart(device); box.innerHTML = await qrSvg(l.url); $('#qrshort').textContent = `No camera? Type ${l.short} on your phone.`; }
+  catch (e) { box.innerHTML = ''; $('#qrshort').textContent = e.message; linkT = setTimeout(showLinkCode, 15000); return; }
+  const until = Date.now() + (l.expires - 5) * 1000;
+  const poll = async () => {
+    if (!$('#qr')) return stopLinkCode();
+    if (Date.now() > until) return showLinkCode();
+    try {
+      const r = await api.linkPoll(l.code, l.secret);
+      if (r.chat) { stopLinkCode(); store.set('chat', r.chat); store.set('me', r.me); return startLive(r.chat); }
+    } catch (e) { if (e.status === 404 || e.status === 410) return showLinkCode(); }
+    linkT = setTimeout(poll, 2000);
+  };
+  linkT = setTimeout(poll, 2000);
+}
+async function approveLink(code) {
+  try { const r = await api.linkApprove(code); toast(`Linked: ${BRAND.name} on ${r.device}`); if (S.view === 'devices') side(); }
+  catch (e) { toast(e.message); }
+}
+let scanStop = null;
+function openScanner() {
+  sheet(html`<div class="picker scanner"><h3>Link a computer</h3><p class="fine">On the computer, open ${BRAND.site.replace('https://', '')} and point your phone at the QR code.</p>
+    <div class="cam"><video id="scanv" muted playsinline></video><i class="frame"></i></div>
+    <form data-form="linkcode" class="linkform"><input name="code" placeholder="Or type the code, like ABCD-EFGH" autocomplete="off" autocapitalize="characters" maxlength="9"><button class="btn">Link</button></form></div>`, 'Link a computer');
+  scan($('#scanv'), (code) => { scanStop = null; closeSheet(); approveLink(code); })
+    .then((stop) => { if ($('#scanv')) scanStop = stop; else stop(); })
+    .catch(() => { const c = $('.scanner .cam'); if (c) c.outerHTML = String(html`<p class="note">The camera isn't available here. Type the code the computer shows instead.</p>`); });
+}
+function viewDevices() {
+  const list = S.devices;
+  return html`${top('Linked computers', { back: true })}<div class="scroll">
+    <div class="pad"><p class="fine" style="text-align:left">Use ${BRAND.name} on a computer: it stays in step with this phone. Private chats stay private on every device; to read older private messages there, turn on Chat backup and enter your recovery key.</p>
+    <button class="btn" data-act="link-scan" ${raw(S.demo ? 'disabled' : '')}>${icon('camera')} Link a computer</button>${S.demo ? html`<p class="fine">Works on the real app.</p>` : ''}</div>
+    <div class="section">Signed in</div>
+    ${!list ? html`<div class="empty"><span class="spin"></span></div>` : list.map((d) => html`<div class="row">${raw(`<span class="av sm" style="background:var(--brand)">${icon(d.current ? 'phone' : 'laptop')}</span>`)}<span class="mid"><span class="l1"><span class="name">${d.current ? 'This device' : d.name}</span></span><span class="l2"><span class="prev">${d.current ? d.name : d.seen ? 'Last active ' + ago(d.seen) : ''}</span></span></span>
+      ${d.current ? '' : html`<button type="button" class="linkbtn" style="color:var(--danger)" data-act="device-out" data-dev="${d.id}">Sign out</button>`}</div>`)}</div>`;
+}
+async function loadDevices() { S.devices = await S.engine.devices().catch(() => []); if (S.view === 'devices') side(); }
+
 async function onForm(form, e) {
   e.preventDefault();
   const f = Object.fromEntries(new FormData(form)), kind = form.dataset.form, btn = $('button', form);
@@ -121,6 +174,7 @@ async function onForm(form, e) {
       store.set('chat', r.chat); store.set('me', r.me); return startLive(r.chat, true);
     }
     if (kind === 'search') return;
+    if (kind === 'linkcode') { if (!f.code.trim()) return; scanStop?.(); scanStop = null; closeSheet(); return approveLink(f.code.trim()); }
     if (kind === 'group') return S.addTo ? addMembers() : S.newComm ? makeCommunity(f) : makeGroup(f.name);
     if (kind === 'agent') return makeAgent(f);
     if (kind === 'rename') { await S.engine.setName(f.name.trim()); S.view = null; toast('Saved'); return side(); }
@@ -181,7 +235,7 @@ function side(soft = false) {
   if (soft && v0() === 'archived') { const list = $('#chatlist'); if (list) { list.innerHTML = String(chatRows()); return; } }
   if (soft && S.tab === 'chats') { const list = $('#chatlist'); if (list) { list.innerHTML = String(chatRows()); return; } }
   const v = S.view;
-  el.innerHTML = String(v === 'archived' ? html`${top('Archived', { back: true })}<div class="scroll" id="chatlist">${chatRows()}</div>` : v === 'blocked' ? viewBlocked() : v === 'starred' ? viewStarred() : v === 'new' ? viewNew() : v === 'group' ? viewGroup() : v === 'communities' ? viewCommunities() : v === 'community' ? viewCommunity() : v === 'info' ? viewInfo() : v === 'make-agent' ? viewMakeAgent() : v === 'rename' ? viewRename()
+  el.innerHTML = String(v === 'archived' ? html`${top('Archived', { back: true })}<div class="scroll" id="chatlist">${chatRows()}</div>` : v === 'blocked' ? viewBlocked() : v === 'starred' ? viewStarred() : v === 'new' ? viewNew() : v === 'group' ? viewGroup() : v === 'communities' ? viewCommunities() : v === 'devices' ? viewDevices() : v === 'community' ? viewCommunity() : v === 'info' ? viewInfo() : v === 'make-agent' ? viewMakeAgent() : v === 'rename' ? viewRename()
     : S.tab === 'chats' ? tabChats() : S.tab === 'feed' ? tabFeed() : S.tab === 'agents' ? tabAgents() : S.tab === 'calls' ? tabCalls() : tabYou());
   if (S.tab === 'feed' && !v && !S.feed && !S.feedErr) loadFeed();
 }
@@ -463,6 +517,7 @@ function tabYou() {
     <button class="set" data-act="rename">${icon('pencil')}<span class="mid">Edit your name</span></button>
     <button class="set" data-act="starred">${icon('star')}<span class="mid">Starred messages</span></button>
     <button class="set" data-act="blocked">${icon('block')}<span class="mid">Blocked people</span></button>
+    <button class="set" data-act="devices">${icon('laptop')}<span class="mid">Linked computers<small>Use ${BRAND.name} on a computer too</small></span></button>
     <button class="set" data-act="backup">${icon('key')}<span class="mid">Chat backup<small>A recovery key lets a new phone read your old private messages</small></span></button>
     ${standalone ? '' : html`<button class="set" data-act="install">${icon('download')}<span class="mid">Install ${BRAND.name}<small>${ios ? 'In Safari: Share, then Add to Home Screen' : 'Put it on your home screen like any app'}</small></span></button>`}
     <div class="set">${icon('clock')}<span class="mid">Last seen and online<small>Off: nobody sees when you're on, and you don't see theirs</small></span><button class="switch" role="switch" aria-checked="${S.engine.privacy().lastSeen}" aria-label="Last seen and online" data-act="priv-seen"></button></div>
@@ -787,6 +842,13 @@ document.addEventListener('click', async (e) => {
     case 'new': history.pushState({ jisst: 'view' }, ''); S.view = 'new'; S.q = ''; S.room = innerWidth < 900 ? null : S.room; return side();
     case 'group': S.view = 'group'; S.newComm = false; S.q = ''; S.pick = []; return side();
     case 'backup': return openBackup();
+    case 'devices': history.pushState({ jisst: 'view' }, ''); S.view = 'devices'; S.devices = null; side(); return loadDevices();
+    case 'link-scan': return openScanner();
+    case 'device-out': {
+      if (!confirm('Sign this computer out?')) return;
+      try { await api.removeDevice(S.engine.token(), d.dev); toast('Signed out'); } catch (err) { toast(err.message); }
+      return loadDevices();
+    }
     case 'backup-make': {
       if (t.dataset.again && !confirm('Make a new recovery key? The old key will stop working.')) return;
       t.disabled = true;
@@ -855,7 +917,7 @@ function openSheet(mid) {
     ${m.mine ? html`<button type="button" class="set" data-act="msg-delete" style="color:var(--danger)">${icon('trash')}<span class="mid">Delete for everyone</span></button>` : ''}</div>`);
   document.body.append(el);
 }
-function closeSheet() { $('#sheet')?.remove(); sheetFor = null; }
+function closeSheet() { $('#sheet')?.remove(); sheetFor = null; scanStop?.(); scanStop = null; }
 let pickerLoaded = null;
 async function picker(onPick) {
   pickerLoaded ||= import('../vendor/emoji-picker/index.js');

@@ -22,6 +22,10 @@ export const api = {
   report: (r) => req('POST', '/api/report', r),
   translate: (text, target) => req('POST', '/api/translate', { text, target }),
   callToken: (room, token) => req('POST', '/api/calls/token', { room, token }),
+  linkStart: (device) => req('POST', '/api/link/start', { device }),
+  linkPoll: (code, secret) => req('POST', '/api/link/poll', { code, secret }),
+  linkApprove: (code) => req('POST', '/api/link/approve', { code }),
+  removeDevice: (token, device_id) => req('POST', '/api/devices/remove', { token, device_id }),
   pushKey: () => req('GET', '/api/push/key'),
   pushSubscribe: (subscription) => req('POST', '/api/push/subscribe', { subscription }),
 };

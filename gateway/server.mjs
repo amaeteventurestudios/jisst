@@ -98,9 +98,9 @@ export function gateway(cfg = config()) {
   }
 
   /** Signed in at Core: make or find the person's chat account and hand the app its chat sign-in. */
-  async function finish(res, user) {
+  async function finish(res, user, device = 'Jisste app') {
     const localpart = 'u' + String(user.id).toLowerCase();
-    const s = await mx.ensure(localpart, 'Jisste app');
+    const s = await mx.ensure(localpart, device);
     const name = String(user.display_name || user.handle || 'Jisste user').slice(0, 60);
     await mx.setName(s.access_token, s.user_id, name).catch(() => {});
     db.put('people', user.id, { id: user.id, mxid: s.user_id, name, handle: String(user.handle || '').toLowerCase(), joined: db.get('people', user.id)?.joined || Date.now() });
@@ -116,6 +116,7 @@ export function gateway(cfg = config()) {
 
   // ---------- the feed: the Jisste social network ----------
   let spaces = { at: 0, map: new Map() }, feedCache = { at: 0, items: [] };
+  const links = new Map(), SHORT = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // link codes live 3 minutes, in memory only
   async function feed(space) {
     if (!cfg.feedUrl) return { items: [], on: false };
     if (Date.now() - spaces.at > 600e3) {
@@ -160,6 +161,44 @@ export function gateway(cfg = config()) {
         return finish(res, { id, display_name: name, handle: name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20) });
       }
       return fail(res, 404, 'No such sign-in step');
+    }
+    // ---------- link a computer: it shows a QR code, the phone that is signed in scans it ----------
+    if (p === '/api/link/start' && req.method === 'POST') {
+      if (limited('link:' + ip, 30, 600e3)) return fail(res, 429, 'Too many tries. Please wait a few minutes.');
+      for (const [k, v] of links) if (v.exp < Date.now()) links.delete(k);
+      const code = crypto.randomBytes(18).toString('base64url'), secret = crypto.randomBytes(18).toString('base64url');
+      const short = Array.from(crypto.randomBytes(8), (x) => SHORT[x % SHORT.length]).join('');
+      const b = await body(req);
+      links.set(code, { secret, short, exp: Date.now() + 180e3, user: null, device: String(b.device || 'a computer').replace(/[^\w .,()/-]/g, '').slice(0, 40) });
+      return json(res, 200, { code, secret, short: short.slice(0, 4) + '-' + short.slice(4), url: `${cfg.publicUrl}/#link=${code}`, expires: 180 });
+    }
+    if (p === '/api/link/approve' && req.method === 'POST') {
+      const s = who(req), person = s && db.get('people', s.u); if (!person) return fail(res, 401, 'Please sign in on your phone first.');
+      if (limited('linkok:' + s.u, 20, 600e3)) return fail(res, 429, 'Too many tries. Please wait a few minutes.');
+      const b = await body(req), c = String(b.code || '').trim(), sh = c.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const hit = links.get(c) || [...links.values()].find((v) => sh.length === 8 && v.short === sh);
+      if (!hit || hit.exp < Date.now() || hit.user) return fail(res, 404, 'That code has expired. Refresh it on the computer and scan again.');
+      hit.user = person.id;
+      return json(res, 200, { ok: true, device: hit.device });
+    }
+    if (p === '/api/link/poll' && req.method === 'POST') {
+      if (limited('linkpoll:' + ip, 400, 600e3)) return fail(res, 429, 'Too many tries. Please wait a few minutes.');
+      const b = await body(req), hit = links.get(String(b.code || ''));
+      if (!hit || hit.secret !== String(b.secret || '')) return fail(res, 404, 'That code has expired.');
+      if (hit.exp < Date.now()) { links.delete(String(b.code)); return fail(res, 410, 'That code has expired.'); }
+      if (!hit.user) return json(res, 200, { waiting: true });
+      links.delete(String(b.code));
+      const person = db.get('people', hit.user); if (!person) return fail(res, 404, 'That account is gone.');
+      return finish(res, { id: person.id, display_name: person.name, handle: person.handle }, `Jisste on ${hit.device}`);
+    }
+    if (p === '/api/devices/remove' && req.method === 'POST') {
+      const s = who(req), person = s && db.get('people', s.u); if (!person) return fail(res, 401, 'Please sign in.');
+      const b = await body(req), token = String(b.token || ''), device = String(b.device_id || '').slice(0, 80);
+      const w = await mx.whoami(token);
+      if (w.status !== 200 || w.body.user_id !== person.mxid) return fail(res, 401, 'Please sign in again.');
+      if (w.body.device_id && w.body.device_id === device) return fail(res, 400, 'To sign out this phone, use Sign out.');
+      await mx.removeDevice(token, 'u' + String(person.id).toLowerCase(), device);
+      return json(res, 200, { ok: true });
     }
     if (p === '/api/session') {
       const s = who(req), person = s && db.get('people', s.u);

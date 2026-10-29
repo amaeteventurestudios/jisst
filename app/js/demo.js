@@ -196,6 +196,7 @@ export function demoEngine({ name = 'You' } = {}) {
     backup: async () => (backupKey ? 'on' : 'off'),
     async makeRecovery() { const k = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/=+$/, ''); backupKey = encodeRecoveryKey(k); return backupKey; },
     async restore(text) { decodeRecoveryKey(text); return 0; },
+    devices: async () => [{ id: 'DEMO', name: 'Jisste app', seen: now(), current: true }],
     privacy: () => ({ ...privacy }),
     async setPrivacy(p) { privacy = { ...privacy, ...p }; changed(); },
     // agents are always online; people in the demo were seen a little while ago

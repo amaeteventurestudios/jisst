@@ -174,3 +174,28 @@ test('call tickets: only for people in the chat, signed for the call server', as
   assert.equal((await post('/api/calls/token', { room: room.room_id, token: tunde.chat.access_token })).status, 403, 'not in the chat');
   assert.equal((await post('/api/calls/token', { room: room.room_id, token: 'nonsense' })).status, 401);
 });
+
+test('a computer links by QR code: the phone approves, the computer gets its own sign-in, and can be signed out', async () => {
+  const start = await post('/api/link/start', { device: 'Chrome on Mac' });
+  assert.equal(start.status, 200);
+  assert.match(start.body.url, /#link=/); assert.match(start.body.short, /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  const { code, secret } = start.body;
+  assert.equal((await post('/api/link/poll', { code, secret })).body.waiting, true);
+  assert.equal((await post('/api/link/poll', { code, secret: 'guess' })).status, 404, 'only the computer that asked can collect');
+  assert.equal((await post('/api/link/approve', { code })).status, 401, 'approving needs a signed-in phone');
+  assert.equal((await post('/api/link/approve', { code: start.body.short.toLowerCase() }, ada.cookie)).status, 200, 'the short code works too');
+  assert.equal((await post('/api/link/approve', { code }, ada.cookie)).status, 404, 'a code works once');
+  const done = await post('/api/link/poll', { code, secret });
+  assert.equal(done.status, 200);
+  assert.equal(done.body.chat.user_id, ada.chat.user_id);
+  assert.notEqual(done.body.chat.device_id, ada.chat.device_id);
+  assert.ok(done.cookie, 'the computer gets its own session');
+  const list = await mx(ada, 'GET', '/_matrix/client/v3/devices');
+  assert.ok(list.devices.some((d) => d.display_name === 'Jisste on Chrome on Mac'));
+  assert.equal((await post('/api/link/poll', { code, secret })).status, 404, 'and only once');
+
+  assert.equal((await post('/api/devices/remove', { token: ada.chat.access_token, device_id: ada.chat.device_id }, ada.cookie)).status, 400);
+  assert.equal((await post('/api/devices/remove', { token: ada.chat.access_token, device_id: done.body.chat.device_id }, ada.cookie)).status, 200);
+  const whoami = await fetch(hs.url + '/_matrix/client/v3/account/whoami', { headers: { authorization: 'Bearer ' + done.body.chat.access_token } });
+  assert.equal(whoami.status, 401, 'the computer is signed out of the chat');
+});

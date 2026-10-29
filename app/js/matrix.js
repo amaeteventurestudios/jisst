@@ -456,6 +456,11 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     backup: async () => (crypto ? crypto.backup() : 'none'),
     makeRecovery: async () => { if (!crypto) throw new Error('Private chats need a newer browser.'); return crypto.makeRecovery(); },
     async restore(key) { if (!crypto) throw new Error('Private chats need a newer browser.'); const n = await crypto.restore(key); await retryLocked(); changed(); return n; },
+    /** The phones and computers signed in to this account (this one first). */
+    async devices() {
+      const { devices = [] } = await call('GET', `${C}/devices`);
+      return devices.map((d) => ({ id: d.device_id, name: d.display_name || 'Jisste', seen: d.last_seen_ts || 0, current: d.device_id === device_id })).sort((a, b) => b.current - a.current || b.seen - a.seen);
+    },
     /** Report a message to the people who run Jisste. */
     report: (roomId, eventId, reason) => call('POST', `${C}/rooms/${enc(roomId)}/report/${enc(eventId)}`, { reason: String(reason).slice(0, 500), score: -100 }),
     /** Favorites are a Matrix room tag, so they follow you to every phone. */

@@ -50,5 +50,13 @@ export function matrix(cfg) {
     typing: (token, userId, roomId, on) => call('PUT', `${C}/rooms/${enc(roomId)}/typing/${enc(userId)}`, on ? { typing: true, timeout: 8000 } : { typing: false }, token),
     sync: (token, since, timeout = 30000) => must('GET', `${C}/sync?timeout=${timeout}${since ? '&since=' + enc(since) : ''}&filter=${enc(JSON.stringify({ room: { timeline: { limit: 20 }, state: { lazy_load_members: true } }, presence: { not_types: ['*'] } }))}`, undefined, token, timeout + 15000),
     whoami: (token) => call('GET', `${C}/account/whoami`, undefined, token),
+    /** Sign one of a person's devices out. The chat server asks for the password, which only the gateway can make. */
+    async removeDevice(token, localpart, deviceId) {
+      const path = `${C}/devices/${enc(deviceId)}`;
+      const first = await call('DELETE', path, {}, token);
+      if (first.status === 200) return;
+      const r = await call('DELETE', path, { auth: { type: 'm.login.password', identifier: { type: 'm.id.user', user: localpart }, password: passwordFor(cfg.key, localpart), session: first.body.session } }, token);
+      if (r.status !== 200) throw new Error(`remove device ${r.status} ${r.body.errcode || ''}`);
+    },
   };
 }
