@@ -121,7 +121,7 @@ async function onForm(form, e) {
       store.set('chat', r.chat); store.set('me', r.me); return startLive(r.chat, true);
     }
     if (kind === 'search') return;
-    if (kind === 'group') return S.addTo ? addMembers() : makeGroup(f.name);
+    if (kind === 'group') return S.addTo ? addMembers() : S.newComm ? makeCommunity(f) : makeGroup(f.name);
     if (kind === 'agent') return makeAgent(f);
     if (kind === 'rename') { await S.engine.setName(f.name.trim()); S.view = null; toast('Saved'); return side(); }
   } catch (err) {
@@ -177,11 +177,11 @@ function side(soft = false) {
   const el = $('#side'); if (!el) return;
   setTabs();
   $('#shell').classList.toggle('in-chat', !!S.room);
-  if (soft && (S.view || ['feed', 'calls', 'you', 'agents'].includes(S.tab))) { if (S.view === 'info') el.innerHTML = String(viewInfo()); else if (!S.view && S.tab === 'agents') el.innerHTML = String(tabAgents()); return; }
+  if (soft && (S.view || ['feed', 'calls', 'you', 'agents'].includes(S.tab))) { if (S.view === 'info') el.innerHTML = String(viewInfo()); else if (S.view === 'community' || S.view === 'communities') el.innerHTML = String(S.view === 'community' ? viewCommunity() : viewCommunities()); else if (!S.view && S.tab === 'agents') el.innerHTML = String(tabAgents()); return; }
   if (soft && v0() === 'archived') { const list = $('#chatlist'); if (list) { list.innerHTML = String(chatRows()); return; } }
   if (soft && S.tab === 'chats') { const list = $('#chatlist'); if (list) { list.innerHTML = String(chatRows()); return; } }
   const v = S.view;
-  el.innerHTML = String(v === 'archived' ? html`${top('Archived', { back: true })}<div class="scroll" id="chatlist">${chatRows()}</div>` : v === 'blocked' ? viewBlocked() : v === 'starred' ? viewStarred() : v === 'new' ? viewNew() : v === 'group' ? viewGroup() : v === 'info' ? viewInfo() : v === 'make-agent' ? viewMakeAgent() : v === 'rename' ? viewRename()
+  el.innerHTML = String(v === 'archived' ? html`${top('Archived', { back: true })}<div class="scroll" id="chatlist">${chatRows()}</div>` : v === 'blocked' ? viewBlocked() : v === 'starred' ? viewStarred() : v === 'new' ? viewNew() : v === 'group' ? viewGroup() : v === 'communities' ? viewCommunities() : v === 'community' ? viewCommunity() : v === 'info' ? viewInfo() : v === 'make-agent' ? viewMakeAgent() : v === 'rename' ? viewRename()
     : S.tab === 'chats' ? tabChats() : S.tab === 'feed' ? tabFeed() : S.tab === 'agents' ? tabAgents() : S.tab === 'calls' ? tabCalls() : tabYou());
   if (S.tab === 'feed' && !v && !S.feed && !S.feedErr) loadFeed();
 }
@@ -198,16 +198,18 @@ function chatRows() {
   const rooms = all.filter((r) => !!r.archived === showArch).sort((a, b) => (b.pinned ?? -1) - (a.pinned ?? -1) || b.ts - a.ts);
   const nArch = showArch ? 0 : all.filter((r) => r.archived).length;
   const archRow = nArch && !q ? html`<button class="row archrow" data-act="archived">${icon('archive')}<span class="mid"><span class="l1"><span class="name">Archived</span><span class="time">${nArch}</span></span></span></button>` : '';
+  const nComm = !showArch && !q && f === 'all' ? S.engine.communities?.().length || 0 : 0;
+  const commRow = nComm ? html`<button class="row archrow" data-act="communities">${icon('community')}<span class="mid"><span class="l1"><span class="name">Communities</span><span class="time">${nComm}</span></span></span></button>` : '';
   if (showArch && !rooms.length) return html`<div class="empty"><p>No archived chats. Press and hold a chat (or right-click it), then Archive, to tuck it away here.</p></div>`;
   if (!rooms.length && nArch) return archRow;
   if (!rooms.length && f !== 'all' && !q) return html`<div class="empty"><p>${f === 'unread' ? "You're all caught up." : f === 'fav' ? 'No favorites yet. Open a chat, tap its name, then Add to favorites.' : f === 'groups' ? 'No groups yet.' : 'No agents yet. Add one from the Agents tab.'}</p></div>`;
   if (!rooms.length) return q ? html`<div class="empty"><p>No chats match "${S.q}".</p></div>` : html`<div class="empty"><div class="big">${icon('chats')}</div><h2>No chats yet</h2><p>Start one with the pencil button, or add an agent from the Agents tab.</p></div>`;
-  return html`${archRow}${rooms.map((r) => {
+  return html`${commRow}${archRow}${rooms.map((r) => {
     const ag = r.agentId ? agentOf(r.other) : null, l = r.last;
     const prev = r.typing.length ? html`<span class="prev typing">${r.dm ? 'typing…' : r.typing[0] + ' is typing…'}</span>`
       : l ? html`<span class="prev">${l.mine && !l.notice ? ticks(l.status) : ''}${!r.dm && !l.mine && !l.notice ? l.sender.split(' ')[0] + ': ' : ''}${l.text}</span>` : html`<span class="prev">No messages yet</span>`;
     return html`<button class="row" data-room="${r.id}" aria-current="${S.room === r.id}">${avatar({ id: r.other || r.id, name: r.name, agent: ag, group: !r.dm })}
-      <span class="mid"><span class="l1"><span class="name">${r.name}</span>${r.favorite ? html`<span class="favt" aria-label="Favorite">${icon('star')}</span>` : ''}${ag ? html`<span class="tag">Agent</span>` : ''}<span class="time ${r.unread && !r.muted ? 'new' : ''}">${r.ts ? when(r.ts) : ''}</span></span>
+      <span class="mid"><span class="l1"><span class="name">${r.announce && r.community ? r.community.name + ' · Announcements' : r.name}</span>${r.favorite ? html`<span class="favt" aria-label="Favorite">${icon('star')}</span>` : ''}${ag ? html`<span class="tag">Agent</span>` : ''}<span class="time ${r.unread && !r.muted ? 'new' : ''}">${r.ts ? when(r.ts) : ''}</span></span>
       <span class="l2">${prev}${r.muted ? html`<span class="rowi" aria-label="Muted">${icon('mute')}</span>` : ''}${r.pinned != null ? html`<span class="rowi" aria-label="Pinned">${icon('pin')}</span>` : ''}${r.unread ? html`<span class="badge ${r.muted ? 'quiet' : ''}">${r.unread}</span>` : ''}</span></span></button>`;
   })}`;
 }
@@ -245,14 +247,18 @@ function peopleList(mode) {
 function viewNew() {
   return html`${top('New chat', { back: true })}<label class="search">${icon('search')}<input id="pq" placeholder="Search by name or @handle" value="${S.q}" autocomplete="off"></label>
     <div class="scroll"><button class="row" data-act="group">${raw(`<span class="av sm" style="background:var(--brand)">${icon('group')}</span>`)}<span class="mid"><span class="name">New group</span></span></button>
+    <button class="row" data-act="community-new">${raw(`<span class="av sm" style="background:var(--brand)">${icon('community')}</span>`)}<span class="mid"><span class="name">New community</span></span></button>
     <div id="plist">${peopleList('person')}</div></div>`;
 }
 function viewGroup() {
-  const adding = !!S.addTo;
-  return html`${top(adding ? 'Add to group' : 'New group', { back: true })}
-    <form data-form="group" class="pad" style="padding-top:4px">${adding ? '' : html`<div class="field"><label for="gn">Group name</label><input id="gn" name="name" maxlength="60" placeholder="Race crew" required></div>`}
+  const adding = !!S.addTo, comm = S.newComm;
+  return html`${top(adding ? (S.addToComm ? 'Add to community' : 'Add to group') : comm ? 'New community' : 'New group', { back: true })}
+    <form data-form="group" class="pad" style="padding-top:4px">${adding ? '' : comm ? html`<p class="fine">A community brings groups together under one name, with an announcements channel only its admins post in.</p>
+      <div class="field"><label for="gn">Community name</label><input id="gn" name="name" maxlength="60" placeholder="Lagos Racers" required></div>
+      <div class="field"><label for="ga">What it's about</label><input id="ga" name="about" maxlength="140" placeholder="Weekend races and meetups"></div>`
+      : html`<div class="field"><label for="gn">Group name</label><input id="gn" name="name" maxlength="60" placeholder="Race crew" required></div>`}
     <div class="picked">${S.pick.map((p) => html`<button type="button" data-pick="${p.mxid}" data-name="${p.name}">${avatar({ id: p.mxid, name: p.name, agent: agentOf(p.mxid), size: 'xs' })}${p.name} ✕</button>`)}</div>
-    <button class="btn" ${raw(S.pick.length ? '' : 'disabled')}>${adding ? 'Add' : 'Create group'}${S.pick.length ? ` ${adding ? '' : 'with '}${S.pick.length}` : ''}</button></form>
+    <button class="btn" ${raw(S.pick.length || comm ? '' : 'disabled')}>${adding ? 'Add' : comm ? 'Create community' : 'Create group'}${S.pick.length ? ` ${adding ? '' : 'with '}${S.pick.length}` : ''}</button></form>
     <label class="search">${icon('search')}<input id="pq" placeholder="Add people and agents" value="${S.q}" autocomplete="off"></label>
     <div class="scroll" id="plist">${peopleList('pick')}</div>`;
 }
@@ -270,10 +276,42 @@ async function makeGroup(name) {
   try { const id = await S.engine.createGroup(name.trim(), S.pick.map((p) => p.mxid)); S.pick = []; S.view = null; S.q = ''; S.tab = 'chats'; openSoon(id); }
   catch (e) { toast(e.message); }
 }
+async function makeCommunity(f) {
+  try { const id = await S.engine.createCommunity(f.name.trim(), (f.about || '').trim(), S.pick.map((p) => p.mxid)); S.pick = []; S.newComm = false; S.q = ''; S.comm = id; S.view = 'community'; openCommunitySoon(id); }
+  catch (e) { toast(e.message); }
+}
+function openCommunitySoon(id, tries = 30) { if (S.engine.community(id)?.announce || tries <= 0) return side(); setTimeout(() => openCommunitySoon(id, tries - 1), 200); }
 async function addMembers() {
+  if (S.addToComm) { const id = S.addToComm; S.addToComm = null; S.addTo = null; for (const p of S.pick) await S.engine.inviteToCommunity(id, p.mxid).catch((e) => toast(e.message)); S.pick = []; S.view = 'community'; S.comm = id; toast('Added'); return side(); }
   const id = S.addTo; S.addTo = null;
   for (const p of S.pick) await S.engine.invite(id, p.mxid).catch((e) => toast(e.message));
   S.pick = []; S.view = null; S.infoFor = null; openSoon(id);
+}
+
+// ---------- communities ----------
+function commRoomRow(id, announce) {
+  const r = S.engine.room(id); if (!r) return '';
+  const l = r.last;
+  return html`<button class="row" data-room="${r.id}" aria-current="${S.room === r.id}">${announce ? raw(`<span class="av" style="background:var(--brand)">${icon('megaphone')}</span>`) : avatar({ id: r.id, name: r.name, group: true })}
+    <span class="mid"><span class="l1"><span class="name">${r.name}</span><span class="time ${r.unread && !r.muted ? 'new' : ''}">${r.ts ? when(r.ts) : ''}</span></span>
+    <span class="l2"><span class="prev">${l ? (!l.mine && !l.notice ? l.sender.split(' ')[0] + ': ' : '') + l.text : announce ? 'Only admins post here' : 'No messages yet'}</span>${r.unread ? html`<span class="badge ${r.muted ? 'quiet' : ''}">${r.unread}</span>` : ''}</span></span></button>`;
+}
+function viewCommunities() {
+  const list = S.engine.communities();
+  return html`${top('Communities', { back: true })}<div class="scroll">
+    <button class="row" data-act="community-new">${raw(`<span class="av" style="background:var(--brand)">${icon('community')}</span>`)}<span class="mid"><span class="name">New community</span><span class="l2"><span class="prev">Groups under one name, with announcements</span></span></span></button>
+    ${list.map((c) => html`<button class="row" data-comm="${c.id}">${avatar({ id: c.id, name: c.name, group: true })}<span class="mid"><span class="l1"><span class="name">${c.name}</span></span><span class="l2"><span class="prev">${c.about || `${c.members} members`}</span></span></span></button>`)}
+    ${list.length ? '' : html`<div class="empty"><p>No communities yet. Make one for your street, your school, your team or your family.</p></div>`}</div>`;
+}
+function viewCommunity() {
+  const c = S.engine.community(S.comm); if (!c) return viewCommunities();
+  return html`${top(c.name, { back: true })}<div class="scroll">
+    <div class="me">${avatar({ id: c.id, name: c.name, group: true, size: 'lg' })}<h2>${c.name}</h2><p>${c.about ? c.about + ' · ' : ''}${c.members} members</p></div>
+    ${c.announce ? html`<div class="section">Announcements</div>${commRoomRow(c.announce, true)}` : ''}
+    <div class="section">Groups</div>${c.groups.map((id) => commRoomRow(id))}
+    ${c.groups.length ? '' : html`<div class="empty"><p>No groups yet.${c.admin ? ' Add the first one below.' : ''}</p></div>`}
+    ${c.admin ? html`<button class="set" data-act="comm-group">${icon('plus')}<span class="mid">New group in ${c.name}</span></button>
+      <button class="set" data-act="comm-invite">${icon('group')}<span class="mid">Add people<small>They join the announcements and every group</small></span></button>` : ''}</div>`;
 }
 
 // ---------- chat info ----------
@@ -399,6 +437,7 @@ function main() {
     <button type="button" class="send" id="sendbtn" aria-label="Record a voice message">${icon('mic')}</button></form></div>`);
   chatUpdate(true);
   const rr = S.engine.room(S.room);
+  if (rr && !rr.canPost) $('#composer').outerHTML = String(html`<div class="blockedbar">${icon('megaphone')} Only ${rr.community ? rr.community.name : 'community'} admins can send messages here.</div>`);
   if (rr?.blocked) $('#composer').outerHTML = String(html`<div class="blockedbar">You blocked ${rr.name}. <button type="button" class="linkbtn" data-act="unblock" data-uid="${rr.other}">Unblock</button></div>`);
   const ta = $('#msg');
   if (innerWidth >= 900) ta?.focus();
@@ -410,7 +449,7 @@ function seenText(p) {
 }
 function chatHead(r) {
   const ag = r.agentId ? agentOf(r.other) : null;
-  const sub = r.typing.length ? html`<small class="typing">${r.dm ? 'typing…' : r.typing[0] + ' is typing…'}</small>` : html`<small>${r.encrypted ? html`<span class="lockt">${icon('lock')}</span>` : ''}${ag ? `Agent · ${ag.kind}` : r.dm ? seenText(S.engine.presenceOf?.(r.other)) || (r.encrypted ? 'Private chat' : 'tap for info') : r.members.map((m) => (m.id === S.engine.me.user_id ? 'You' : m.name.split(' ')[0])).join(', ')}</small>`;
+  const sub = r.typing.length ? html`<small class="typing">${r.dm ? 'typing…' : r.typing[0] + ' is typing…'}</small>` : html`<small>${r.encrypted ? html`<span class="lockt">${icon('lock')}</span>` : ''}${ag ? `Agent · ${ag.kind}` : r.dm ? seenText(S.engine.presenceOf?.(r.other)) || (r.encrypted ? 'Private chat' : 'tap for info') : (r.community ? r.community.name + (r.announce ? ' · Announcements' : '') + ' · ' : '') + r.members.map((m) => (m.id === S.engine.me.user_id ? 'You' : m.name.split(' ')[0])).join(', ')}</small>`;
   return html`<button class="iconbtn" data-act="close-chat" aria-label="Back to chats">${icon('back')}</button>
     <button class="who" data-act="info">${avatar({ id: r.other || r.id, name: r.name, agent: ag, group: !r.dm, size: 'sm' })}<span class="t"><b>${r.name}</b>${sub}</span></button>
     ${r.agentId ? '' : html`<button class="iconbtn" data-act="call-voice" aria-label="Voice call" title="Voice call">${icon('calls')}</button><button class="iconbtn" data-act="call-video" aria-label="Video call" title="Video call">${icon('video')}</button>`}
@@ -578,6 +617,7 @@ document.addEventListener('click', async (e) => {
   }
   if (d.pick !== undefined && t.closest('#picker')) { t.setAttribute('aria-pressed', String(t.getAttribute('aria-pressed') !== 'true')); if (!PICK.many) return finishPick(); const n = $$('#picker [data-pick][aria-pressed="true"]').length; $('#pickgo').disabled = !n; $('#pickgo').textContent = n ? `Send to ${n}` : 'Send'; return; }
   if (t.id === 'pickgo') return finishPick();
+  if (d.comm) { S.comm = d.comm; S.view = 'community'; return side(); }
   if (d.room) return openRoom(d.room);
   if (d.say) {
     if (S.view === 'info') { const id = S.infoFor || S.room; S.view = null; S.infoFor = null; S.room = null; openRoom(id); }
@@ -660,7 +700,11 @@ document.addEventListener('click', async (e) => {
     case 'leave-demo': store.set('demoName', null); S.engine?.stop(); S.room = null; S.tab = 'chats'; return S.gateway ? (S.demo = false, welcome()) : welcome();
     case 'restart': return welcome('start');
     case 'new': history.pushState({ jisst: 'view' }, ''); S.view = 'new'; S.q = ''; S.room = innerWidth < 900 ? null : S.room; return side();
-    case 'group': S.view = 'group'; S.q = ''; S.pick = []; return side();
+    case 'group': S.view = 'group'; S.newComm = false; S.q = ''; S.pick = []; return side();
+    case 'community-new': S.view = 'group'; S.newComm = true; S.q = ''; S.pick = []; return side();
+    case 'communities': history.pushState({ jisst: 'view' }, ''); S.view = 'communities'; return side();
+    case 'comm-invite': S.addTo = S.comm; S.addToComm = S.comm; S.newComm = false; S.view = 'group'; S.q = ''; S.pick = []; return side();
+    case 'comm-group': { const name = prompt('Name for the new group'); if (!name?.trim()) return; try { const id = await S.engine.addCommunityGroup(S.comm, name.trim()); S.view = null; openSoon(id); } catch (err) { toast(err.message); } return; }
     case 'add-member': S.addTo = S.infoFor || S.room; S.view = 'group'; S.q = ''; S.pick = []; return side();
     case 'back': if (history.state?.jisst) return history.back(); return back();
     case 'close-chat': if (history.state?.jisst === 'room') return history.back(); return closeRoom();
@@ -873,7 +917,10 @@ function maps(root) {
 
 async function sendPrivacyDemo() { const id = await S.engine.openDirect(S.engine.agentMxid('jisst')); openSoon(id, () => sendText('privacy')); }
 function back() {
-  if (S.view) { const was = S.view; S.view = null; S.addTo = null; if (was === 'info' && S.infoFor) { S.room = S.infoFor; S.infoFor = null; side(); return main(); } return side(); }
+  if (S.room && ['community', 'communities', 'archived'].includes(S.view)) return closeRoom();   // a chat opened from a list screen goes back to that list
+  if (S.view === 'community' && !S.room) { S.view = 'communities'; return side(); }
+  if (S.view === 'group' && S.addToComm) { S.addToComm = null; S.addTo = null; S.view = 'community'; return side(); }
+  if (S.view) { const was = S.view; S.view = null; S.addTo = null; S.newComm = false; if (was === 'info' && S.infoFor) { S.room = S.infoFor; S.infoFor = null; side(); return main(); } return side(); }
   if (S.room) return closeRoom();
 }
 addEventListener('popstate', () => back());

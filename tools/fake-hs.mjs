@@ -128,9 +128,11 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
     if (p === '/_matrix/client/v3/createRoom') {
       const roomId = id('!') + ':' + serverName;
       rooms.set(roomId, { id: roomId, events: [], state: new Map(), members: new Map(), receipts: new Map(), typing: new Map() });
-      event(roomId, me, 'm.room.create', { creator: me }, '');
+      event(roomId, me, 'm.room.create', { creator: me, ...(b.creation_content || {}) }, '');
       event(roomId, me, 'm.room.member', { membership: 'join', displayname: users.get(me).name }, me);
+      event(roomId, me, 'm.room.power_levels', { users: { [me]: 100 }, users_default: 0, events_default: 0, state_default: 50, events: {}, ...(b.power_level_content_override || {}) }, '');
       if (b.name) event(roomId, me, 'm.room.name', { name: b.name }, '');
+      if (b.topic) event(roomId, me, 'm.room.topic', { topic: b.topic }, '');
       for (const s of b.initial_state || []) event(roomId, me, s.type, s.content, s.state_key || '');
       for (const inv of b.invite || []) if (users.has(inv)) event(roomId, me, 'm.room.member', { membership: 'invite', is_direct: !!b.is_direct, displayname: users.get(inv).name }, inv);
       return json(res, 200, { room_id: roomId });
@@ -148,6 +150,9 @@ export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-tok
       if (verb === 'leave') { event(roomId, me, 'm.room.member', { membership: 'leave' }, me); return json(res, 200, {}); }
       if (mine !== 'join') return err(res, 403, 'M_FORBIDDEN', 'Not in room');
       if (verb === 'invite') { if (!users.has(b.user_id)) return err(res, 404, 'M_NOT_FOUND', 'No user'); event(roomId, me, 'm.room.member', { membership: 'invite', displayname: users.get(b.user_id).name }, b.user_id); return json(res, 200, {}); }
+      // power levels: who may send what (an announcements channel lets only its admins post)
+      const level = (u) => { const pl = room.state.get('m.room.power_levels\u0000')?.content; return pl ? { me: pl.users?.[u] ?? pl.users_default ?? 0, need: (t, st) => pl.events?.[t] ?? (st ? pl.state_default ?? 50 : pl.events_default ?? 0) } : { me: 100, need: () => 0 }; };
+      if ((verb === 'send' || verb === 'state') && rest) { const t = rest.split('/')[0], L = level(me); if (t !== 'm.reaction' && L.me < L.need(t, verb === 'state')) return err(res, 403, 'M_FORBIDDEN', 'Not allowed to send here'); }
       if (verb === 'send') { const [type, txn] = rest.split('/'); const ev = event(roomId, me, type, b); ev.unsigned = { transaction_id: txn }; room.receipts.set(me, ev.event_id); return json(res, 200, { event_id: ev.event_id }); }
       if (verb === 'redact') { const [target] = rest.split('/'); const ev = event(roomId, me, 'm.room.redaction', { redacts: target }); ev.redacts = target; return json(res, 200, { event_id: ev.event_id }); }
       if (verb === 'state') { const [type, key = ''] = rest.split('/'); const ev = event(roomId, me, type, b, key); return json(res, 200, { event_id: ev.event_id }); }

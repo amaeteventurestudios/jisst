@@ -32,12 +32,18 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
   const files = new Map();      // mxc -> key for a locked photo or voice note
   const changed = () => { if (pending) return; pending = globalThis.requestAnimationFrame?.(() => { pending = null; for (const f of subs) f(); }) ?? setTimeout(() => { pending = null; for (const f of subs) f(); }); };
 
-  const room = (id) => { let r = rooms.get(id); if (!r) rooms.set(id, r = { id, name: '', members: new Map(), events: [], receipts: new Map(), typing: [], membership: 'join', created: 0, readUpTo: null, encrypted: false, reactions: new Map(), redacted: new Set(), edits: new Map() }); return r; };
+  const room = (id) => { let r = rooms.get(id); if (!r) rooms.set(id, r = { id, name: '', members: new Map(), events: [], receipts: new Map(), typing: [], membership: 'join', created: 0, readUpTo: null, encrypted: false, reactions: new Map(), redacted: new Set(), edits: new Map(), children: new Set(), parent: null, power: null }); return r; };
   function applyState(r, ev) {
     if (ev.type === 'm.room.name') r.name = ev.content?.name || '';
     if (ev.type === 'm.room.encryption') r.encrypted = true;
     if (ev.type === 'io.jisst.disappear') r.disappear = Math.max(0, +ev.content?.seconds || 0);
-    if (ev.type === 'm.room.create') r.created = ev.origin_server_ts || r.created;
+    if (ev.type === 'm.room.create') { r.created = ev.origin_server_ts || r.created; if (ev.content?.type === 'm.space') r.space = true; }
+    if (ev.type === 'm.room.topic') r.topic = ev.content?.topic || '';
+    if (ev.type === 'm.room.power_levels') r.power = ev.content || null;
+    // communities are Matrix spaces: the space lists its chats (m.space.child) and each chat names its community (m.space.parent)
+    if (ev.type === 'm.space.child') { if (ev.content?.via) r.children.add(ev.state_key); else r.children.delete(ev.state_key); if (ev.content?.['io.jisst.announcements']) r.announce = ev.state_key; }
+    if (ev.type === 'm.space.parent' && ev.content?.via) r.parent = ev.state_key;
+    if (ev.type === 'io.jisst.announcements') r.announcements = true;
     if (ev.type === 'm.room.member') {
       const m = { id: ev.state_key, name: ev.content?.displayname || r.members.get(ev.state_key)?.name || ev.state_key.slice(1).split(':')[0], membership: ev.content?.membership };
       r.members.set(ev.state_key, m);
@@ -195,6 +201,17 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     }
   }
   const sweeper = setInterval(() => { if (!stopped) { sweep(); changed(); } }, 60e3);
+  const levelOf = (r, u) => (r.power ? r.power.users?.[u] ?? r.power.users_default ?? 0 : 0);
+  const canSend = (r) => !r.power || levelOf(r, user_id) >= (r.power.events?.['m.room.message'] ?? r.power.events_default ?? 0);
+  function communityOf(r) { const sp = r.parent && rooms.get(r.parent); return sp?.space && sp.membership === 'join' ? { id: sp.id, name: sp.name || 'Community' } : null; }
+  function community(sp) {
+    const kids = [...sp.children].map((id) => rooms.get(id)).filter((x) => x && x.membership === 'join');
+    return { id: sp.id, name: sp.name || 'Community', about: sp.topic || '', admin: levelOf(sp, user_id) >= 50, members: [...sp.members.values()].filter((m) => m.membership === 'join').length,
+      announce: kids.find((x) => x.announcements)?.id || null, groups: kids.filter((x) => !x.announcements).map((x) => x.id) };
+  }
+  const link = (space, child, extra = {}) => Promise.all([
+    call('PUT', `${C}/rooms/${enc(space)}/state/m.space.child/${enc(child)}`, { via: [user_id.split(':')[1]], ...extra }),
+    call('PUT', `${C}/rooms/${enc(child)}/state/m.space.parent/${enc(space)}`, { via: [user_id.split(':')[1]], canonical: true })]);
   function summary(r) {
     const o = others(r), dm = isDirect(r.id) || (!r.name && o.length === 1);
     const other = dm ? o[0] : null;
@@ -205,7 +222,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     const readIdx = r.readUpTo ? r.events.findIndex((e) => e.event_id === r.readUpTo) : -1;
     r.events.forEach((e, i) => { if (i > readIdx && e.type === 'm.room.message' && e.sender !== user_id && !blocked.has(e.sender)) unread++; });
     return { id: r.id, name, dm, encrypted: r.encrypted, favorite: !!r.tags?.['m.favourite'], muted: muted.has(r.id), archived: !!r.tags?.['u.jisst.archived'], pinned: r.tags?.['u.jisst.pinned'] ? +r.tags['u.jisst.pinned'].order || 0 : null,
-      disappear: r.disappear || 0, blocked: !!(other && blocked.has(other.id)), agentId: other && agents.get(other.id)?.id || null, other: other?.id || null, members: [...r.members.values()].filter((m) => m.membership === 'join').map((m) => ({ ...m, agent: agents.has(m.id) })),
+      disappear: r.disappear || 0, community: communityOf(r), announce: !!r.announcements, canPost: canSend(r), admin: levelOf(r, user_id) >= 50, blocked: !!(other && blocked.has(other.id)), agentId: other && agents.get(other.id)?.id || null, other: other?.id || null, members: [...r.members.values()].filter((m) => m.membership === 'join').map((m) => ({ ...m, agent: agents.has(m.id) })),
       last: last ? { text: last.kind === 'text' || last.kind === 'notice' ? last.text : preview(last), ts: last.ts, mine: last.mine, status: last.status, sender: last.senderName, notice: last.kind === 'notice' } : null,
       ts: last?.ts || r.created || 0, unread, typing: r.typing.map((u) => (names.get(u) || '').split(' ')[0]).filter(Boolean) };
   }
@@ -237,7 +254,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     start() { loop(); return this; },
     stop() { stopped = true; clearInterval(sweeper); },
     onchange(f) { subs.add(f); return () => subs.delete(f); },
-    rooms: () => [...rooms.values()].filter((r) => r.membership === 'join').map(summary).sort((a, b) => b.ts - a.ts),
+    rooms: () => [...rooms.values()].filter((r) => r.membership === 'join' && !r.space).map(summary).sort((a, b) => b.ts - a.ts),
     room: (id) => (rooms.has(id) ? summary(rooms.get(id)) : null),
     timeline: (id) => { const r = rooms.get(id); return r ? r.events.map((e) => view(e, r)).filter(Boolean) : []; },
     name: (uid) => names.get(uid) || '',
@@ -360,6 +377,31 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     },
     /** { online, at } for a person, or null when they hide it (or you hide yours: last seen works both ways too). */
     presenceOf(uid) { const p = privacy.lastSeen && presence.get(uid); return p && (p.online || p.at) ? { ...p } : null; },
+    /** Communities: one space with an announcements channel only its admins post in, and the groups that belong to it. */
+    communities: () => [...rooms.values()].filter((r) => r.space && r.membership === 'join').map(community).sort((a, b) => a.name.localeCompare(b.name)),
+    community: (id) => { const r = rooms.get(id); return r?.space ? community(r) : null; },
+    async createCommunity(name, about, ids) {
+      if (ids.some((u) => agents.has(u))) throw new Error('Add agents to a group inside the community, not to the community itself.');
+      const { room_id: space } = await call('POST', `${C}/createRoom`, { name, topic: about || undefined, invite: ids, preset: 'private_chat', creation_content: { type: 'm.space' },
+        power_level_content_override: { events_default: 100, users: { [user_id]: 100 } } });
+      const { room_id: ann } = await call('POST', `${C}/createRoom`, { name: 'Announcements', topic: `News for everyone in ${name}`, invite: ids, preset: 'private_chat',
+        power_level_content_override: { events_default: 50, users: { [user_id]: 100 } }, initial_state: [...(cryptoFailed ? [] : [ENCRYPTION]), { type: 'io.jisst.announcements', state_key: '', content: {} }] });
+      await link(space, ann, { order: '0', 'io.jisst.announcements': true });
+      return space;
+    },
+    /** A new group inside a community, with everyone in the community in it. */
+    async addCommunityGroup(spaceId, name, extra = []) {
+      const sp = rooms.get(spaceId), ids = [...new Set([...[...(sp?.members.values() || [])].filter((m) => ['join', 'invite'].includes(m.membership) && m.id !== user_id).map((m) => m.id), ...extra])];
+      const id = await this.createGroup(name, ids);
+      await link(spaceId, id);
+      return id;
+    },
+    /** Add someone to a community: the community, its announcements and its groups. */
+    async inviteToCommunity(spaceId, uid) {
+      const c = this.community(spaceId); if (!c) throw new Error('No such community.');
+      await call('POST', `${C}/rooms/${enc(spaceId)}/invite`, { user_id: uid });
+      for (const id of [c.announce, ...c.groups].filter(Boolean)) await call('POST', `${C}/rooms/${enc(id)}/invite`, { user_id: uid }).catch(() => {});
+    },
     /** Report a message to the people who run Jisste. */
     report: (roomId, eventId, reason) => call('POST', `${C}/rooms/${enc(roomId)}/report/${enc(eventId)}`, { reason: String(reason).slice(0, 500), score: -100 }),
     /** Favorites are a Matrix room tag, so they follow you to every phone. */

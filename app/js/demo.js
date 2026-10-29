@@ -3,7 +3,7 @@
 import { AGENTS, byId, answer } from '../agents/index.js';
 import { extras, tally, POLL, preview, contactContent, pollContent, locationContent } from './content.js';
 
-const H = 3600e3, M = 60e3;
+const H = 3600e3, M = 60e3, D = 24 * H;
 const EXAMPLE_TEAMS = [['Harmattan Racing', 25, 1], ['Lagoon Dynamics', 18, 2], ['Kilimanjaro Motorsport', 15, 3], ['Volta Speed', 12, 4], ['Northern Lights GP', 10, 5]];
 export const EXAMPLE_FEED = [
   { id: 'f1', title: 'Daily Grand Prix #6 at Abu Dhabi: Harmattan Racing top the board', text: 'Harmattan Racing won with 25 points, best car P1 (drivers KOR and SAH). Lagoon Dynamics were second with 18.', space: 'Grand Prix', slug: 'grand-prix', icon: '🏁', agent: true, votes: 41, replies: 12, ago: 2 * H },
@@ -48,6 +48,12 @@ export function demoEngine({ name = 'You' } = {}) {
   mk('r-crew', { name: 'Race crew', members: [me.user_id, '@tunde:demo', '@zainab:demo', '@grandprix:demo'], events: [ev('@zainab:demo', 'Grand Prix yesterday', 26 * M)] });
   mk('r-jisst', { members: [me.user_id, '@jisst:demo'], events: [] });
   mk('r-zainab', { members: [me.user_id, '@zainab:demo'], events: [ev('@zainab:demo', 'Sending you the photos from the weekend tonight', 22 * H), ev(me.user_id, 'Thank you!', 21 * H)] });
+  // a community: announcements only its admin (Tunde) posts in, and the groups that belong to it
+  const comms = new Map([['c-lagos', { id: 'c-lagos', name: 'Lagos Racers', about: 'Weekend races, meetups and car talk around Lagos', admins: ['@tunde:demo'], members: [me.user_id, '@tunde:demo', '@zainab:demo', '@kofi:demo', '@amara:demo'], announce: 'r-lagos-news', groups: ['r-crew', 'r-meetups'] }]]);
+  mk('r-lagos-news', { name: 'Announcements', community: 'c-lagos', announce: true, members: comms.get('c-lagos').members.slice(), events: [ev('@tunde:demo', 'Welcome to Lagos Racers! Race night is every Saturday at 8.', 5 * D), ev('@tunde:demo', 'This week: the Abuja track. Bring your best agent.', 4 * H)] });
+  mk('r-meetups', { name: 'Saturday meetups', community: 'c-lagos', members: [me.user_id, '@tunde:demo', '@kofi:demo', '@amara:demo'], events: [ev('@kofi:demo', 'Who is coming to Lekki on Saturday?', 6 * H), ev('@amara:demo', 'Me!', 5.5 * H)] });
+  rooms.get('r-crew').community = 'c-lagos';
+  rooms.get('r-lagos-news').read = 0; rooms.get('r-meetups').read = 1;
   rooms.get('r-family').fav = true;
   rooms.get('r-tunde').read = 1; rooms.get('r-zainab').read = 2; rooms.get('r-family').read = 2;
 
@@ -95,7 +101,7 @@ export function demoEngine({ name = 'You' } = {}) {
   function summary(r) {
     const others = r.members.filter((m) => m !== me.user_id), dm = !r.name && others.length === 1, other = dm ? others[0] : null;
     const msgs = r.events.map((e) => view(r, e)).filter(Boolean), last = msgs[msgs.length - 1];
-    return { id: r.id, name: r.name || names.get(other) || 'Chat', dm, encrypted: isPrivate(r), favorite: !!r.fav, muted: muted.has(r.id), archived: !!r.archived, pinned: r.pinned || null, disappear: r.disappear || 0, blocked: !!(other && blocked.has(other)), agentId: other && agentIds.get(other)?.id || null, other, members: r.members.map((id) => ({ id, name: names.get(id), membership: 'join', agent: agentIds.has(id) })),
+    return { id: r.id, name: r.name || names.get(other) || 'Chat', dm, encrypted: isPrivate(r), favorite: !!r.fav, muted: muted.has(r.id), archived: !!r.archived, pinned: r.pinned || null, disappear: r.disappear || 0, community: r.community ? { id: r.community, name: comms.get(r.community).name } : null, announce: !!r.announce, canPost: !r.announce || comms.get(r.community).admins.includes(me.user_id), admin: !r.community || comms.get(r.community).admins.includes(me.user_id), blocked: !!(other && blocked.has(other)), agentId: other && agentIds.get(other)?.id || null, other, members: r.members.map((id) => ({ id, name: names.get(id), membership: 'join', agent: agentIds.has(id) })),
       last: last ? { text: last.kind === 'text' || last.kind === 'notice' ? last.text : preview(last), ts: last.ts, mine: last.mine, status: last.status, sender: last.senderName, notice: last.kind === 'notice' } : null,
       ts: last?.ts || t0 - 40 * H, unread: r.events.slice(r.read + 1).filter((e) => e.sender !== me.user_id && !e.notice).length, typing: r.typing };
   }
@@ -114,7 +120,7 @@ export function demoEngine({ name = 'You' } = {}) {
     room: (id) => (rooms.has(id) ? summary(rooms.get(id)) : null),
     timeline: (id) => { const r = rooms.get(id); return r ? r.events.map((e) => view(r, e)).filter(Boolean) : []; },
     name: (uid) => names.get(uid) || '',
-    async send(roomId, text, { replyTo } = {}) { const r = rooms.get(roomId); push(r, ev(me.user_id, text, 0, replyTo ? { replyTo } : {})); r.read = r.events.length - 1; await agentsReply(r, text); peopleReply(r); },
+    async send(roomId, text, { replyTo } = {}) { const r = rooms.get(roomId); if (!summary(r).canPost) throw new Error('Only community admins can send messages here.'); push(r, ev(me.user_id, text, 0, replyTo ? { replyTo } : {})); r.read = r.events.length - 1; await agentsReply(r, text); peopleReply(r); },
     async sendFile(roomId, file, kind, info = {}) {
       const r = rooms.get(roomId), url = URL.createObjectURL(file);
       const content = kind === 'file' || kind === 'video' ? { content: { msgtype: kind === 'video' ? 'm.video' : 'm.file', body: file.name, info: { size: file.size, mimetype: file.type } } } : {};
@@ -151,6 +157,18 @@ export function demoEngine({ name = 'You' } = {}) {
     async setDisappear(roomId, seconds) { const r = rooms.get(roomId); r.disappear = seconds; push(r, { ...ev(me.user_id, seconds ? `turned on disappearing messages: new messages go after ${seconds >= 86400 * 60 ? '90 days' : seconds >= 86400 * 7 ? '1 week' : '24 hours'}` : 'turned off disappearing messages', 0), notice: true }); },
     async block(uid, on) { if (on) blocked.add(uid); else blocked.delete(uid); changed(); },
     blocked: () => [...blocked].map((id) => ({ id, name: names.get(id) || id })),
+    communities: () => [...comms.keys()].map((id) => api.community(id)).sort((a, b) => a.name.localeCompare(b.name)),
+    community(id) { const c = comms.get(id); return c ? { id, name: c.name, about: c.about, admin: c.admins.includes(me.user_id), members: c.members.length, announce: c.announce, groups: c.groups.filter((g) => rooms.has(g)) } : null; },
+    async createCommunity(name, about, ids) {
+      if (ids.some((u) => agentIds.has(u))) throw new Error('Add agents to a group inside the community, not to the community itself.');
+      const id = 'c' + n++, ann = 'r' + n++, members = [me.user_id, ...ids];
+      comms.set(id, { id, name, about, admins: [me.user_id], members, announce: ann, groups: [] });
+      mk(ann, { name: 'Announcements', community: id, announce: true, members: members.slice() });
+      push(rooms.get(ann), ev(me.user_id, `created the community "${name}"`, 0, { notice: true }));
+      return id;
+    },
+    async addCommunityGroup(cid, name, extra = []) { const c = comms.get(cid), id = await api.createGroup(name, [...new Set([...c.members.filter((m) => m !== me.user_id), ...extra])]); rooms.get(id).community = cid; c.groups.push(id); changed(); return id; },
+    async inviteToCommunity(cid, uid) { const c = comms.get(cid); if (!c.members.includes(uid)) c.members.push(uid); for (const id of [c.announce, ...c.groups]) { const r = rooms.get(id); if (r && !r.members.includes(uid)) r.members.push(uid); } changed(); },
     privacy: () => ({ ...privacy }),
     async setPrivacy(p) { privacy = { ...privacy, ...p }; changed(); },
     // agents are always online; people in the demo were seen a little while ago
