@@ -143,7 +143,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     if (ev.type === 'm.room.create') return r.name ? { ...base, kind: 'notice', text: `${mine ? 'You' : base.senderName} created this group` } : null;
     if (ev.type === 'm.room.encryption') return null;   // the banner at the top of a private chat says it
     if (ev.event_id && r.redacted.has(ev.event_id)) return { ...base, kind: 'text', text: 'This message was deleted', deleted: true, status: 'sent', card: null, reactions: [] };
-    if (ev.locked || ev.type === 'm.room.encrypted') return { ...base, kind: 'text', text: cryptoFailed ? 'Private message: open Jisst in a newer browser to read it' : 'Waiting for this message…', waiting: true, status: 'sent', card: null, reactions: [] };
+    if (ev.locked || ev.type === 'm.room.encrypted') return { ...base, kind: 'text', text: cryptoFailed ? 'Private message: open Jisste in a newer browser to read it' : 'Waiting for this message…', waiting: true, status: 'sent', card: null, reactions: [] };
     let status = 'sent';
     if (mine) { if (!ev.event_id) status = ev.failed ? 'failed' : 'sending'; else { const idx = r.events.indexOf(ev); for (const [u, eid] of r.receipts) if (u !== user_id && r.events.findIndex((e) => e.event_id === eid) >= idx) { status = 'read'; break; } } }
     const kind = c.msgtype === 'm.image' ? 'image' : c.msgtype === 'm.audio' ? 'voice' : c.msgtype === 'm.notice' && !c['io.jisst.card'] ? 'text' : 'text';
@@ -279,7 +279,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     async rename(roomId, name) { await call('PUT', `${C}/rooms/${enc(roomId)}/state/m.room.name/`, { name }); },
     async setName(name) { await call('PUT', `${C}/profile/${enc(user_id)}/displayname`, { displayname: name }); me.name = name; changed(); },
     async setPusher(p, on = true) {
-      return call('POST', `${C}/pushers/set`, on ? { kind: 'http', app_id: p.app_id, pushkey: p.pushkey, app_display_name: 'Jisst', device_display_name: navigator.userAgent.slice(0, 60), lang: navigator.language || 'en', data: { url: p.url } }
+      return call('POST', `${C}/pushers/set`, on ? { kind: 'http', app_id: p.app_id, pushkey: p.pushkey, app_display_name: 'Jisste', device_display_name: navigator.userAgent.slice(0, 60), lang: navigator.language || 'en', data: { url: p.url } }
         : { kind: null, app_id: p.app_id, pushkey: p.pushkey });
     },
     async signOut() { stopped = true; crypto?.close(); await call('POST', `${C}/logout`, {}).catch(() => {}); },

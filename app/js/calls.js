@@ -1,6 +1,6 @@
 // Voice calls, video calls and screen sharing, on LiveKit (Apache 2.0: the server runs next to the chat server, the
 // browser part is app/vendor/livekit). A call is announced in the chat as a message carrying `io.jisst.call`
-// { id, video, key?, state }, so everyone in the chat can join, and it rings for whoever has Jisst open.
+// { id, video, key?, state }, so everyone in the chat can join, and it rings for whoever has Jisste open.
 // In a private chat the call is private too: the caller makes a key, it travels inside the locked call message, and
 // LiveKit encrypts the sound and pictures with it, so even our call server can't see or hear them.
 import { api } from './api.js';

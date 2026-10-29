@@ -1,10 +1,10 @@
-// A stand-in chat server for tests and local runs. It speaks the part of the Matrix client-server API that Jisst uses
+// A stand-in chat server for tests and local runs. It speaks the part of the Matrix client-server API that Jisste uses
 // (accounts with a registration token, sign-in, profiles, rooms, invites, messages, read receipts, typing, account data,
 // media, pushers, sync, and the keys and to-device messages that private chats need), in memory. It is not a chat server: production uses Tuwunel (server/install.sh).
 import http from 'node:http';
 import crypto from 'node:crypto';
 
-export function fakeHomeserver({ serverName = 'jisst.app', regToken = 'test-token', port = 0 } = {}) {
+export function fakeHomeserver({ serverName = 'jisste.com', regToken = 'test-token', port = 0 } = {}) {
   const users = new Map(), tokens = new Map(), rooms = new Map(), account = new Map(), media = new Map(), pushers = new Map();
   const tags = new Map();         // user + room -> { tag: {order} }
   const devices = new Map();      // user -> Map(device -> { keys, otks: Map(id -> key), fallback: Map(id -> key) })

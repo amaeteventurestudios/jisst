@@ -15,7 +15,7 @@ async function person(name) {
   const post = (p, b) => fetch(hs.url + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) }).then((r) => r.json());
   await post('/_matrix/client/v3/register', { username: name, password: 'pw', auth: { type: 'm.login.registration_token', token: 'tok' } });
   const login = await post('/_matrix/client/v3/login', { type: 'm.login.password', identifier: { type: 'm.id.user', user: name }, password: 'pw' });
-  const e = matrixEngine({ homeserver: hs.url, ...login }, { agents: new Map([['@bot:jisst.app', { id: 'bot' }]]), cryptoLoad: nodeCrypto, cryptoStore: false }).start();
+  const e = matrixEngine({ homeserver: hs.url, ...login }, { agents: new Map([['@bot:jisste.com', { id: 'bot' }]]), cryptoLoad: nodeCrypto, cryptoStore: false }).start();
   await until(() => e.ready());
   return e;
 }
@@ -24,7 +24,7 @@ test.after(() => { people.ada?.stop(); people.tunde?.stop(); hs.close(); });
 
 test('a chat between two people is private, and both of them read it', async () => {
   const { ada, tunde } = people;
-  const roomId = await ada.openDirect('@tunde:jisst.app');
+  const roomId = await ada.openDirect('@tunde:jisste.com');
   await until(() => tunde.room(roomId) && ada.room(roomId)?.members.length === 2);
   assert.equal(ada.room(roomId).encrypted, true);
   await ada.send(roomId, 'Did you race the Daily?');
@@ -62,11 +62,11 @@ test('a photo in a private chat is locked on the server and opens on the other p
 
 test('a chat with an agent is not private, and agents cannot join a private group', async () => {
   const { ada } = people;
-  hs.users.set('@bot:jisst.app', { pw: 'x', name: 'Bot' });
-  const roomId = await ada.openDirect('@bot:jisst.app');
+  hs.users.set('@bot:jisste.com', { pw: 'x', name: 'Bot' });
+  const roomId = await ada.openDirect('@bot:jisste.com');
   await until(() => ada.room(roomId));
   assert.equal(ada.room(roomId).encrypted, false);
-  const group = await ada.createGroup('Family', ['@tunde:jisst.app']);
+  const group = await ada.createGroup('Family', ['@tunde:jisste.com']);
   await until(() => ada.room(group)?.encrypted);
-  await assert.rejects(ada.invite(group, '@bot:jisst.app'), /Agents can't join a private group/);
+  await assert.rejects(ada.invite(group, '@bot:jisste.com'), /Agents can't join a private group/);
 });

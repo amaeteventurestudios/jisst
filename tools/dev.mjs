@@ -1,4 +1,4 @@
-// Jisst on one computer, for building and testing: the app, the gateway and a stand-in chat server behind one address,
+// Jisste on one computer, for building and testing: the app, the gateway and a stand-in chat server behind one address,
 // laid out like the real server (Caddy sends /api and /_matrix/push to the gateway, the rest of /_matrix to the chat server).
 // npm run dev  ->  http://localhost:8310 (sign in with any name: the test sign-in is on)
 import http from 'node:http';
@@ -33,5 +33,5 @@ http.createServer((req, res) => {
   if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) f = path.join(root, 'index.html');
   res.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream', 'cache-control': 'no-store' });
   fs.createReadStream(f).pipe(res);
-}).listen(PORT, '127.0.0.1', () => console.log(`Jisst dev on http://localhost:${PORT}  (demo: /?demo)`));
+}).listen(PORT, '127.0.0.1', () => console.log(`Jisste dev on http://localhost:${PORT}  (demo: /?demo)`));
 process.on('SIGINT', () => { gw.stop(); hs.close(); process.exit(0); });

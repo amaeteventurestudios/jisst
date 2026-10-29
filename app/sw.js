@@ -1,4 +1,4 @@
-// Jisst's service worker: keeps the app itself on the phone so it opens offline, and shows message alerts.
+// Jisste's service worker: keeps the app itself on the phone so it opens offline, and shows message alerts.
 // Chats are never cached here; they always come from the server.
 const VERSION = 'jisst-2';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/main.js', 'js/api.js', 'js/matrix.js', 'js/demo.js', 'js/ui.js', 'js/crypto.js', 'js/calls.js', 'vendor/minisearch/index.js',
@@ -23,7 +23,7 @@ self.addEventListener('push', (e) => {
   let d = {}; try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data?.text() }; }
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
     if (cs.some((c) => c.visibilityState === 'visible' && c.focused)) return;   // the app is open: it shows the message itself
-    return self.registration.showNotification(d.title || 'Jisst', { body: d.body || 'New message', tag: d.room || 'jisst', renotify: true,
+    return self.registration.showNotification(d.title || 'Jisste', { body: d.body || 'New message', tag: d.room || 'jisst', renotify: true,
       icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { room: d.room || '' } });
   }));
 });

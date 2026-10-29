@@ -1,4 +1,4 @@
-// Screenshots of Jisst at four sizes, light and dark, through the main screens, with any console errors.
+// Screenshots of Jisste at four sizes, light and dark, through the main screens, with any console errors.
 // npm run dev (in another terminal), then: node tools/shot.mjs [outdir]   BASE=http://localhost:8310 MODE=demo|live|both
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -33,7 +33,7 @@ async function run(browser, sizeName, scheme, mode) {
   if (mobile && await page.locator('#chathead [data-act="close-chat"]').isVisible()) await backToList();
   // the helper agent's chat
   const nav = mobile ? '#tabbar' : '#railtabs';
-  if (mode === 'live') { await tap(`${nav} [data-tab="agents"]`); await tap('[data-agent="@jisst:jisst.app"]'); await wait(2500); }
+  if (mode === 'live') { await tap(`${nav} [data-tab="agents"]`); await tap('[data-agent="@jisst:jisste.com"]'); await wait(2500); }
   else await tap('.row[data-room]');
   await shot('3-chat');
   if (await page.locator('.btns button[data-say]').count()) { await tap('.btns button[data-say]'); await wait(mode === 'demo' ? 1600 : 3000); await shot('4-reply'); }
@@ -42,7 +42,7 @@ async function run(browser, sizeName, scheme, mode) {
   await wait(mode === 'demo' ? 1600 : 2500);
   await shot('5-sent');
   await backToList();
-  if (mode === 'live') { await tap(`${nav} [data-tab="agents"]`); await tap('[data-agent="@grandprix:jisst.app"]'); await wait(2500); await shot('5b-grandprix'); await backToList(); }
+  if (mode === 'live') { await tap(`${nav} [data-tab="agents"]`); await tap('[data-agent="@grandprix:jisste.com"]'); await wait(2500); await shot('5b-grandprix'); await backToList(); }
   for (const t of ['feed', 'agents', 'calls', 'you']) { await tap(`${nav} [data-tab="${t}"]`); await wait(t === 'feed' ? 900 : 200); await shot('6-' + t); }
   await tap(`${nav} [data-tab="chats"]`);
   await tap('.top [data-act="new"]'); await shot('7-new');

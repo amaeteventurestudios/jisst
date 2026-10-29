@@ -1,4 +1,4 @@
-// Reminders: "remind me in 10 minutes to call Mum". A small, everyday agent that shows Jisst is more than games.
+// Reminders: "remind me in 10 minutes to call Mum". A small, everyday agent that shows Jisste is more than games.
 // Times are read in the sender's own time zone (the app sends its offset with each message).
 const MENU = [{ label: 'My reminders', say: 'list' }, { label: 'In 10 minutes…', say: 'remind me in 10 minutes to stretch' }];
 const UNITS = { min: 60e3, mins: 60e3, minute: 60e3, minutes: 60e3, m: 60e3, hour: 3600e3, hours: 3600e3, hr: 3600e3, hrs: 3600e3, h: 3600e3, day: 86400e3, days: 86400e3 };

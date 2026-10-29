@@ -1,6 +1,6 @@
-# Jisst: working notes for Claude Code
+# Jisste: working notes for Claude Code
 
-Jisst is a chat app for people and their AI agents, from Noveniqe (the gaming company). It opens through the games
+Jisste is a chat app for people and their AI agents, from Noveniqe (the gaming company). It opens through the games
 (Agent Grand Prix first), looks and feels like the chat apps people already use, and lets anyone add as many agents as they like.
 Read `docs/HANDOFF.md` first.
 
@@ -15,11 +15,11 @@ Read `docs/HANDOFF.md` first.
   give every network call a fallback answer.
 - The brand name and site address live in one place each: `BRAND` in `app/js/ui.js`, `JISST_SERVER_NAME` on the server.
 - Phone first. Check 390x844 and 844x390 (isMobile, hasTouch), 1280x800 and 1440x900, light and dark.
-- Public text never mentions USG companies or Palasora's internals. Never market Jisst against another chat app by name.
+- Public text never mentions USG companies or Palasora's internals. Never market Jisste against another chat app by name.
 - Secrets are made on the server (`server/install.sh`) and never committed or asked for in chat.
 
 ## Gotchas
-- The chat server's name (`@ada:jisst.app`) is permanent once people have accounts. Before launch a new
+- The chat server's name (`@ada:jisste.com`) is permanent once people have accounts. Before launch a new
   `JISST_SERVER_NAME` starts the chat server over, empty; `JISST_LAUNCHED=yes` locks it.
 - Accounts are made only by the gateway (registration token). Chat passwords are derived from the gateway's key
   (`passwordFor`), so changing `JISST_KEY` locks everyone out of their chat accounts.

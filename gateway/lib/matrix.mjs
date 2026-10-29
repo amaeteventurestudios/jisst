@@ -22,7 +22,7 @@ export function matrix(cfg) {
   const mxid = (localpart) => `@${localpart}:${cfg.serverName}`;
 
   /** Make the account if it isn't there yet (registration token flow), then sign in. Returns { user_id, access_token, device_id }. */
-  async function ensure(localpart, device = 'Jisst') {
+  async function ensure(localpart, device = 'Jisste') {
     const password = passwordFor(cfg.key, localpart);
     const login = () => call('POST', C + '/login', { type: 'm.login.password', identifier: { type: 'm.id.user', user: localpart }, password, initial_device_display_name: device });
     let r = await login();

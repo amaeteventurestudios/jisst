@@ -1,5 +1,5 @@
 // Phone alerts without a paid service: the Web Push standard (RFC 8291 message encryption, RFC 8292 VAPID), built on
-// Node's own crypto. A browser or installed Jisst app gives us a subscription (an address at its maker's push service,
+// Node's own crypto. A browser or installed Jisste app gives us a subscription (an address at its maker's push service,
 // plus two keys); we encrypt each alert for that subscription only and post it there. The push services are free.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -24,7 +24,7 @@ function signingKey(keys) {
   return crypto.createPrivateKey({ key: { kty: 'EC', crv: 'P-256', d: keys.privateKey, x: b64u(pub.subarray(1, 33)), y: b64u(pub.subarray(33, 65)) }, format: 'jwk' });
 }
 
-export function vapidHeader(endpoint, keys, subject = 'mailto:support@jisst.app', now = Date.now()) {
+export function vapidHeader(endpoint, keys, subject = 'mailto:support@jisste.com', now = Date.now()) {
   const aud = new URL(endpoint).origin;
   const head = b64u(JSON.stringify({ typ: 'JWT', alg: 'ES256' })), body = b64u(JSON.stringify({ aud, exp: Math.floor(now / 1000) + 12 * 3600, sub: subject }));
   const sig = crypto.sign('sha256', Buffer.from(`${head}.${body}`), { key: signingKey(keys), dsaEncoding: 'ieee-p1363' });

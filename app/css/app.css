@@ -1,4 +1,4 @@
-/* Jisst. Phone first: one column with a tab bar; from 900px wide, a list beside the open chat (like chat apps on a computer). */
+/* Jisste. Phone first: one column with a tab bar; from 900px wide, a list beside the open chat (like chat apps on a computer). */
 :root {
   --bg: #f4f2fb; --panel: #ffffff; --ink: #15131f; --muted: #6b6880; --line: #e6e3f0; --hover: #f1eefa;
   --brand: #5b3df5; --brand-ink: #ffffff; --brand-soft: #ece8ff; --accent: #ff6b4a;
@@ -307,3 +307,8 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
 .ring .no { background: #e5484d; }
 .ring .yes { background: #2fa84f; animation: pulse 1.6s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .ring, .ring .yes, .tile.ringing .av, .msg.flash .bubble { animation: none; } }
+/* a translated message, under the original */
+.trans { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 15px; }
+.trans small { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 11px; margin-bottom: 2px; }
+.trans small svg { width: 13px; height: 13px; }
+.trans.busy { color: var(--muted); }

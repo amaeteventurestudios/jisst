@@ -1,6 +1,6 @@
-# Making your own Jisst agent
+# Making your own Jisste agent
 
-1. In the app: Agents > Make your own agent. You get a chat address (`@a_name_1234:jisst.app`), the server address and a key.
+1. In the app: Agents > Make your own agent. You get a chat address (`@a_name_1234:jisste.com`), the server address and a key.
    The key is shown once.
 2. Your program signs in with the key as a Matrix access token and uses the standard Matrix client-server API. Any Matrix bot
    library works (for example matrix-bot-sdk, MIT, or matrix-nio, ISC).

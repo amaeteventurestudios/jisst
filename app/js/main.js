@@ -1,4 +1,4 @@
-// Jisst, the app. Five tabs (Chats, Feed, Agents, Calls, You), WhatsApp-simple chats with people and agents, and the
+// Jisste, the app. Five tabs (Chats, Feed, Agents, Calls, You), WhatsApp-simple chats with people and agents, and the
 // sign-in. The chat engine is matrix.js on a real server, or demo.js in the preview; the screens can't tell them apart.
 import { api } from './api.js';
 import { matrixEngine } from './matrix.js';
@@ -9,7 +9,7 @@ import { calls, callBubble, callStates } from './calls.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const app = $('#app');
-const S = { engine: null, demo: false, tab: 'chats', room: null, view: null, q: '', space: '', agents: null, feed: null, feedErr: false, pick: [], gateway: null, installEvt: null, pushOn: store.get('push', false) };
+const S = { engine: null, demo: false, tab: 'chats', room: null, view: null, q: '', space: '', agents: null, feed: null, feedErr: false, pick: [], gateway: null, installEvt: null, pushOn: store.get('push', false), tr: {} };
 
 // ---------- theme ----------
 function applyTheme(t = store.get('theme', 'system')) { if (t === 'system') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; }
@@ -29,8 +29,10 @@ async function boot() {
   addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); S.installEvt = e; });
   const wantDemo = new URLSearchParams(location.search).has('demo');
   S.gateway = wantDemo ? null : await api.health();
+  // Visitor stats: page views only (no cookies, no names, never what anyone writes), and none for people who ask browsers not to track them
+  if (S.gateway?.stats) { const t = document.createElement('script'); t.defer = true; t.src = S.gateway.stats.url + '/script.js'; t.dataset.websiteId = S.gateway.stats.site; t.dataset.doNotTrack = 'true'; t.dataset.excludeHash = 'true'; document.head.append(t); }
   if (!S.gateway) return startDemo(store.get('demoName', ''));
-  // installed app and alerts: only on a real Jisst server (a preview copy has nothing to keep offline)
+  // installed app and alerts: only on a real Jisste server (a preview copy has nothing to keep offline)
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   learnAgents(await api.agents().catch(() => ({ agents: [], soon: SOON, community: [] })));
   const chat = store.get('chat');
@@ -50,7 +52,7 @@ function startLive(chat, fresh = false) {
   // opened from a message alert
   const m = /^#room=(.+)$/.exec(location.hash); if (m) { history.replaceState(null, '', location.pathname + location.search); openSoon(decodeURIComponent(m[1])); }
 }
-// a brand-new account starts with a chat with the Jisst helper instead of an empty list
+// a brand-new account starts with a chat with the Jisste helper instead of an empty list
 function greet(tries = 40) {
   if (!S.engine?.ready()) { if (tries > 0) setTimeout(() => greet(tries - 1), 250); return; }
   const helper = S.agents?.agents?.find((a) => a.id === 'jisst');
@@ -398,7 +400,8 @@ function bubble(m, prev, r) {
   const buttons = c && (c.buttons?.length || c.link) ? html`<div class="btns ${(c.buttons?.length || 0) + (c.link ? 1 : 0) >= 4 ? 'two' : ''}">${(c.buttons || []).map((b) => html`<button type="button" data-say="${b.say}">${b.label}</button>`)}${c.link ? (c.link.url === '#feed' ? html`<button type="button" data-tab="feed">${c.link.label}</button>` : html`<a href="${c.link.url}" target="_blank" rel="noopener">${icon('link')}${c.link.label}</a>`) : ''}</div>` : '';
   const reacts = m.reactions?.length ? html`<div class="reacts">${m.reactions.map((x) => html`<button type="button" class="react ${x.mine ? 'on' : ''}" data-react="${x.key}" data-mid="${m.id}" title="${x.names.filter(Boolean).join(', ')}">${x.key}${x.count > 1 ? html`<b>${x.count}</b>` : ''}</button>`)}</div>` : '';
   const more = m.deleted || m.status === 'sending' ? '' : html`<button type="button" class="msgmore" data-msgmenu="${m.id}" aria-label="React or more">${icon('smile')}</button>`;
-  return html`<div class="msg ${m.mine ? 'mine' : ''} ${first ? 'first' : ''} ${m.deleted ? 'deleted' : ''}" data-mid="${m.id}"><div class="bubble">${from}${m.call ? callBubble(m, S.callLive?.(m)) : content}${cardHtml}</div>${more}${reacts}${buttons}</div>`;
+  const tr = S.tr[m.id] ? html`<div class="trans ${S.tr[m.id].busy ? 'busy' : ''}" dir="auto"><small>${icon('translate')} ${S.tr[m.id].busy ? '' : 'Translated'}</small>${S.tr[m.id].text}</div>` : '';
+  return html`<div class="msg ${m.mine ? 'mine' : ''} ${first ? 'first' : ''} ${m.deleted ? 'deleted' : ''}" data-mid="${m.id}"><div class="bubble">${from}${m.call ? callBubble(m, S.callLive?.(m)) : content}${tr}${cardHtml}</div>${more}${reacts}${buttons}</div>`;
 }
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 function chatUpdate(initial = false) {
@@ -527,6 +530,20 @@ document.addEventListener('click', async (e) => {
     case 'sheet-close': return closeSheet();
     case 'more-emoji': return sheetPicker();
     case 'msg-copy': { const m = sheetMsg(); closeSheet(); try { await navigator.clipboard.writeText(m?.text || ''); toast('Copied'); } catch { toast("Couldn't copy here."); } return; }
+    case 'msg-translate': {
+      const m = sheetMsg(); closeSheet(); if (!m) return;
+      if (S.tr[m.id]) { delete S.tr[m.id]; return chatUpdate(); }
+      // a private chat's messages are locked on the phones: translating one means sending it to our server, so ask once
+      if (S.engine.room(S.room)?.encrypted && !store.get('trOk', false)) {
+        if (!confirm(`To translate, this one message is sent to ${BRAND.name}'s own translator, which keeps nothing. The rest of the chat stays private. Translate?`)) return;
+        store.set('trOk', true);
+      }
+      const lang = (navigator.language || 'en').slice(0, 2).toLowerCase();
+      S.tr[m.id] = { text: 'Translating…', busy: true }; chatUpdate();
+      try { const r = await api.translate(m.text, ['en', 'fr', 'es', 'pt', 'ar'].includes(lang) ? lang : 'en'); S.tr[m.id] = { text: r.text, from: r.source }; }
+      catch (err) { delete S.tr[m.id]; toast(err.message); }
+      return chatUpdate();
+    }
     case 'msg-delete': { const m = sheetMsg(); closeSheet(); if (m) S.engine.remove(S.room, m.id).catch((err) => toast(err.message)); return; }
     case 'try-demo': S.demo = true; return welcome();
     case 'leave-demo': store.set('demoName', null); S.engine?.stop(); S.room = null; S.tab = 'chats'; return S.gateway ? (S.demo = false, welcome()) : welcome();
@@ -568,6 +585,7 @@ function openSheet(mid) {
     <div class="quick">${QUICK.map((e) => html`<button type="button" data-react="${e}" data-mid="${mid}" aria-label="React ${e}">${e}</button>`)}<button type="button" data-act="more-emoji" aria-label="More emoji">${icon('plus')}</button></div>
     <div class="pick" id="sheetpick"></div>
     ${m.text && !m.call ? html`<button type="button" class="set" data-act="msg-copy">${icon('copy')}<span class="mid">Copy</span></button>` : ''}
+    ${m.text && !m.call && S.gateway?.translate && !S.demo ? html`<button type="button" class="set" data-act="msg-translate">${icon('translate')}<span class="mid">${S.tr[m.id] ? 'Show the original' : 'Translate'}</span></button>` : ''}
     ${m.mine ? html`<button type="button" class="set" data-act="msg-delete" style="color:var(--danger)">${icon('trash')}<span class="mid">Delete for everyone</span></button>` : ''}</div>`);
   document.body.append(el);
 }

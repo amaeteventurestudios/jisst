@@ -1,6 +1,6 @@
-// Jisst's own agents as chat accounts. Each agent (app/agents/) gets an account on the chat server and listens with a
+// Jisste's own agents as chat accounts. Each agent (app/agents/) gets an account on the chat server and listens with a
 // standard sync loop: it joins chats it is invited to, says hello in a new one-to-one chat, and answers messages
-// (in a group only when someone names it). Replies carry a card (`io.jisst.card`) that the Jisst app shows with
+// (in a group only when someone names it). Replies carry a card (`io.jisst.card`) that the Jisste app shows with
 // buttons, plus plain text for any other chat app.
 import crypto from 'node:crypto';
 import { AGENTS, answer, plain } from '../../app/agents/index.js';
@@ -36,7 +36,7 @@ export function bots(cfg, mx, db, { fetchJson, log = () => {} }) {
     let me, since = null, rooms = new Map();
     while (!stopped) {
       try {
-        me ||= await mx.ensure(agent.id, 'Jisst agent');
+        me ||= await mx.ensure(agent.id, 'Jisste agent');
         if (!live.has(agent.id)) { live.set(agent.id, me); await mx.setName(me.access_token, me.user_id, agent.name).catch(() => {}); log(`agent ${agent.name} is ${me.user_id}`); }
         const s = await mx.sync(me.access_token, since, since ? 30000 : 0);
         const first = !since; since = s.next_batch;

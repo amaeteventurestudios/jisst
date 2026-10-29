@@ -1,7 +1,7 @@
-// Jisst's own agents: the contacts that answer you in a chat. Each one is plain JavaScript with no
+// Jisste's own agents: the contacts that answer you in a chat. Each one is plain JavaScript with no
 // dependencies, so the same brain runs on the server (gateway/, for real chats) and in the browser
 // (the app's demo mode). An agent answers commands from what it can look up (a game's results, the
-// Jisst feed, your reminders). No AI model is called, so an answer costs nothing.
+// Jisste feed, your reminders). No AI model is called, so an answer costs nothing.
 //
 // An agent is { id, name, about, glyph, color, kind, commands, hello(ctx), reply(text, ctx) }.
 //   reply() returns { text, card? } or null (null: stay quiet, for example in a group where it wasn't named).
@@ -18,7 +18,7 @@ export const byId = (id) => AGENTS.find((a) => a.id === id) || null;
 
 // Agents on the way: shown in the directory, not yet in chats.
 export const SOON = [
-  { id: 'teague', name: 'Teague', glyph: 'TG', color: '#E10600', kind: 'Agent Grand Prix', about: 'Your race engineer. Today he lives on WhatsApp; he moves into Jisst next.' },
+  { id: 'teague', name: 'Teague', glyph: 'TG', color: '#E10600', kind: 'Agent Grand Prix', about: 'Your race engineer. Today he lives on WhatsApp; he moves into Jisste next.' },
   { id: 'palasora', name: 'Palasora Town Hall', glyph: 'PT', color: '#C34218', kind: 'Palasora', about: 'News, plots and your business in Palasora, once the town opens.' },
 ];
 

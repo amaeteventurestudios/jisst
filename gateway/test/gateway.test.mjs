@@ -1,4 +1,4 @@
-// End to end: the gateway against the stand-in chat server, with stand-ins for Agent Grand Prix and the Jisst feed.
+// End to end: the gateway against the stand-in chat server, with stand-ins for Agent Grand Prix and the Jisste feed.
 // node --test gateway/test/
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -51,7 +51,7 @@ let ada, tunde;
 test('signing in makes a chat account and a session', async () => {
   const r = await post('/api/signin/dev', { name: 'Ada Obi' });
   assert.equal(r.status, 200);
-  assert.match(r.body.chat.user_id, /^@u[a-z0-9]+:jisst\.app$/);
+  assert.match(r.body.chat.user_id, /^@u[a-z0-9]+:jisste\.com$/);
   assert.ok(r.body.chat.access_token);
   ada = { ...r.body, cookie: r.cookie };
   const again = await fetch(base + '/api/session', { headers: { cookie: ada.cookie } }).then((x) => x.json());
@@ -109,7 +109,7 @@ test('reminders are stored and sent on time', async () => {
   assert.equal(gw.db.all('reminders').length, 0);
 });
 
-test('the feed reads the Jisst social network', async () => {
+test('the feed reads the Jisste social network', async () => {
   const f = await fetch(base + '/api/feed?space=grand-prix').then((x) => x.json());
   assert.equal(f.items.length, 1);
   assert.equal(f.items[0].space, 'Grand Prix');

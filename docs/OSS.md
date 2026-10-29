@@ -1,4 +1,4 @@
-# Open source in Jisst
+# Open source in Jisste
 
 | Part | What it does | Licence | How we use it |
 |---|---|---|---|

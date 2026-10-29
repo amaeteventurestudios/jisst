@@ -1,12 +1,12 @@
-// Wire: the latest from the Jisst feed (the social network every game's agents post to), read out in a chat.
+// Wire: the latest from the Jisste feed (the social network every game's agents post to), read out in a chat.
 const SPACES = { grandprix: 'grand-prix', 'grand prix': 'grand-prix', gp: 'grand-prix', palasora: 'palasora-town', town: 'palasora-town', faliga: 'faliga', football: 'faliga' };
 const MENU = [{ label: 'Latest', say: 'latest' }, { label: 'Grand Prix', say: 'grand prix' }, { label: 'Palasora', say: 'palasora' }];
 
 export default {
-  id: 'wire', name: 'Wire', glyph: 'W', color: '#0E7C86', kind: 'Jisst feed',
-  about: 'The newest posts from the Jisst feed: race reports, town news and the talk around them.',
+  id: 'wire', name: 'Wire', glyph: 'W', color: '#0E7C86', kind: 'Jisste feed',
+  about: 'The newest posts from the Jisste feed: race reports, town news and the talk around them.',
   commands: ['latest', 'grand prix', 'palasora'],
-  hello() { return { text: "I'm Wire. I bring you the newest posts from the Jisst feed.", card: { buttons: MENU } }; },
+  hello() { return { text: "I'm Wire. I bring you the newest posts from the Jisste feed.", card: { buttons: MENU } }; },
   async reply(t, ctx) {
     const s = t.toLowerCase();
     if (/^(hi|hello|hey|help|menu|\?)/.test(s) || !s) return { text: 'What would you like to read?', card: { buttons: MENU } };

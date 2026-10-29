@@ -1,4 +1,4 @@
-// Talking to the Jisst gateway (gateway/server.mjs) on the same address as the app.
+// Talking to the Jisste gateway (gateway/server.mjs) on the same address as the app.
 async function req(method, path, body) {
   const r = await fetch(path, { method, credentials: 'same-origin', headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
   const j = await r.json().catch(() => ({}));
@@ -19,6 +19,7 @@ export const api = {
   agents: () => req('GET', '/api/agents'),
   makeAgent: (name, about, isPublic) => req('POST', '/api/dev/agents', { name, about, public: isPublic }),
   feed: (space) => req('GET', '/api/feed' + (space ? '?space=' + encodeURIComponent(space) : '')),
+  translate: (text, target) => req('POST', '/api/translate', { text, target }),
   callToken: (room, token) => req('POST', '/api/calls/token', { room, token }),
   pushKey: () => req('GET', '/api/push/key'),
   pushSubscribe: (subscription) => req('POST', '/api/push/subscribe', { subscription }),

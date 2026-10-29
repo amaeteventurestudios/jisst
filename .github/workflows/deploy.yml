@@ -1,15 +1,15 @@
-# Puts Jisst on the server whenever main changes, next to Palasora and Agent Grand Prix (each has its own site file in the
+# Puts Jisste on the server whenever main changes, next to Palasora and Agent Grand Prix (each has its own site file in the
 # shared Caddy web server). One-time setup, in this repo's Settings > Secrets and variables > Actions:
 #   Secrets (the same three values the palasora repo has):
 #     SERVER_HOST       the server's public IP address
 #     SERVER_USER       the login name (ubuntu on Oracle Cloud)
 #     SERVER_SSH_KEY    the whole private key file (BEGIN ... END lines included)
 #   Variables (optional):
-#     JISST_DOMAIN       the app's names, separated by spaces, main one first. Without it: jisst.<the IP with dashes>.sslip.io,
+#     JISST_DOMAIN       the app's names, separated by spaces, main one first. Without it: jisste.<the IP with dashes>.sslip.io,
 #                        a free name that always points at the server. Add the real domain once its DNS A record points there.
-#     JISST_SERVER_NAME  the end of every chat address (@ada:jisst.app; default jisst.app). Before launch a new name starts the
+#     JISST_SERVER_NAME  the end of every chat address (@ada:jisste.com; default jisste.com). Before launch a new name starts the
 #                        chat server over, empty. At launch set JISST_LAUNCHED to yes: from then on the name never changes.
-#     JISST_FEED_URL     where the Jisst social network answers (default https://palasora.com)
+#     JISST_FEED_URL     where the Jisste social network answers (default https://palasora.com)
 name: Deploy to server
 on:
   push:
@@ -19,6 +19,7 @@ on:
 concurrency: deploy-jisst
 env:
   TUWUNEL_IMAGE: jevolk/tuwunel:v1.9.4   # the chat server (Apache 2.0), taken from its official image
+  LIVEKIT_IMAGE: livekit/livekit-server:v1.13.9   # the call server (Apache 2.0), taken from its official image
 jobs:
   deploy:
     runs-on: ubuntu-24.04-arm   # the server is ARM too
@@ -29,15 +30,18 @@ jobs:
         with: { node-version: 22 }
       - name: Test
         run: npm test
-      - name: Pack (app, gateway and the chat server program)
+      - name: Pack (app, gateway, the chat server and the call server)
         run: |
           set -euo pipefail
           mkdir -p pack/bin
-          cp -r app gateway package.json pack/
+          cp -r app gateway server package.json pack/
           id=$(docker create --platform linux/arm64 "$TUWUNEL_IMAGE")
           docker cp "$id:/usr/bin/tuwunel" pack/bin/tuwunel
           docker rm "$id" >/dev/null
-          file pack/bin/tuwunel
+          id=$(docker create --platform linux/arm64 "$LIVEKIT_IMAGE")
+          docker cp "$id:/livekit-server" pack/bin/livekit-server
+          docker rm "$id" >/dev/null
+          file pack/bin/tuwunel pack/bin/livekit-server
           tar czf jisst.tgz -C pack .
           ls -lh jisst.tgz
       - name: Copy to the server and (re)start the services
@@ -56,17 +60,17 @@ jobs:
           USER=$(printf '%s' "$USER" | grep -oE '[a-z_][a-z0-9_-]*' | tail -1); USER="${USER:-ubuntu}"
           install -m 600 /dev/null key && printf '%s\n' "$KEY" | tr -d '\r' | sed -n '/-----BEGIN/,/-----END/p' > key
           [ -s key ] || { echo '::error::SERVER_SSH_KEY should hold the whole key file, from the -----BEGIN line to the -----END line.'; exit 1; }
-          SPARE="jisst.$(printf '%s' "$HOST" | tr . -).sslip.io"
+          SPARE="jisste.$(printf '%s' "$HOST" | tr . -).sslip.io"
           DOMAIN=$(printf '%s' "$DOMAIN" | tr ',' ' ' | xargs)
           case " $DOMAIN " in *" $SPARE "*) ;; *) DOMAIN="$DOMAIN $SPARE" ;; esac
           DOMAIN=$(echo $DOMAIN)
           clean() { printf '%s' "$1" | tr -cd 'A-Za-z0-9.:/_-'; }
           OPTS="-i key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
           scp $OPTS jisst.tgz "$USER@$HOST:/tmp/"
-          ssh $OPTS "$USER@$HOST" "JISST_DOMAIN='$DOMAIN' JISST_SERVER_NAME='$(clean "$SERVER_NAME")' JISST_FEED_URL='$(clean "$FEED")' JISST_LAUNCHED='$(clean "$LAUNCHED")' bash -s" < server/install.sh
+          ssh $OPTS "$USER@$HOST" "JISST_PUBLIC_IP='$(clean "$HOST")' JISST_DOMAIN='$DOMAIN' JISST_SERVER_NAME='$(clean "$SERVER_NAME")' JISST_FEED_URL='$(clean "$FEED")' JISST_LAUNCHED='$(clean "$LAUNCHED")' bash -s" < server/install.sh
           rm -f key
           echo "SITES=$DOMAIN" >> "$GITHUB_ENV"
-          echo "::notice::Jisst answers at: $(printf 'https://%s ' $DOMAIN)"
+          echo "::notice::Jisste answers at: $(printf 'https://%s ' $DOMAIN)"
       - name: Check the app answers
         run: |
           ok=0
@@ -76,4 +80,4 @@ jobs:
             if [ "$up" = 1 ]; then echo "OK: https://$n"; ok=1
             else echo "::warning::https://$n doesn't answer yet. For a domain, check its DNS A record points at the server (in Cloudflare: DNS only, grey cloud)."; fi
           done
-          [ "$ok" = 1 ] || echo "::warning::Jisst runs on the server, but no address answers from outside yet. HTTPS certificates can take a minute."
+          [ "$ok" = 1 ] || echo "::warning::Jisste runs on the server, but no address answers from outside yet. HTTPS certificates can take a minute."

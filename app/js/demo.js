@@ -89,7 +89,7 @@ export function demoEngine({ name = 'You' } = {}) {
   const api = {
     demo: true, me, ready: () => true,
     start() {
-      // Jisst says hello, and the Grand Prix agent answers the question already waiting in Race crew
+      // Jisste says hello, and the Grand Prix agent answers the question already waiting in Race crew
       setTimeout(async () => { const j = byId('jisst'); const h = j.hello({ user: { name: me.name } }); push(rooms.get('r-jisst'), ev('@jisst:demo', h.text, 0, { card: h.card })); }, 300);
       setTimeout(() => agentsReply(rooms.get('r-crew'), 'Grand Prix yesterday').then(() => { const r = rooms.get('r-crew'); r.events[r.events.length - 1].ts = t0 - 25 * M; changed(); }), 50);
       return api;

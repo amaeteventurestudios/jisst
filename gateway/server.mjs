@@ -1,6 +1,6 @@
-// The Jisst gateway: the small piece we build ourselves so the open-source parts work as one app (the 20%).
+// The Jisste gateway: the small piece we build ourselves so the open-source parts work as one app (the 20%).
 // Plain Node 22, no dependencies. It sits behind Caddy next to the chat server (Tuwunel) and does what a chat server
-// doesn't: Noveniqe sign-in, making chat accounts, Jisst's own agents, finding people, the feed, and phone alerts.
+// doesn't: Noveniqe sign-in, making chat accounts, Jisste's own agents, finding people, the feed, and phone alerts.
 //
 // Browser endpoints (same address as the app):
 //   GET  /api/health                       is it up, and what is switched on
@@ -10,12 +10,13 @@
 //   POST /api/signin/profile {display_name, handle}   a new person's name and @handle
 //   GET  /api/session                      a fresh chat sign-in for someone already signed in (cookie)
 //   POST /api/signout
-//   GET  /api/people?q=                    people on Jisst by name or @handle
+//   GET  /api/people?q=                    people on Jisste by name or @handle
 //   GET  /api/agents                       the agents you can add
 //   POST /api/dev/agents {name, about}     make your own agent; answers with its chat key, once
-//   GET  /api/feed?space=                  the newest posts from the Jisst social network
+//   GET  /api/feed?space=                  the newest posts from the Jisste social network
 //   GET  /api/push/key, POST /api/push/subscribe {subscription}    phone alerts (Web Push)
 //   POST /api/calls/token {room, token}    a ticket to join the call in a chat (LiveKit), for members of that chat only
+//   POST /api/translate {text, target}     one message translated on our own server (Argos models); nothing is kept
 // Chat server endpoint:
 //   POST /_matrix/push/v1/notify           the chat server tells us a message arrived; we send the phone alert
 import http from 'node:http';
@@ -86,8 +87,8 @@ export function gateway(cfg = config()) {
   /** Signed in at Core: make or find the person's chat account and hand the app its chat sign-in. */
   async function finish(res, user) {
     const localpart = 'u' + String(user.id).toLowerCase();
-    const s = await mx.ensure(localpart, 'Jisst app');
-    const name = String(user.display_name || user.handle || 'Jisst user').slice(0, 60);
+    const s = await mx.ensure(localpart, 'Jisste app');
+    const name = String(user.display_name || user.handle || 'Jisste user').slice(0, 60);
     await mx.setName(s.access_token, s.user_id, name).catch(() => {});
     db.put('people', user.id, { id: user.id, mxid: s.user_id, name, handle: String(user.handle || '').toLowerCase(), joined: db.get('people', user.id)?.joined || Date.now() });
     const sid = sign({ u: user.id, exp: Date.now() + 180 * 86400e3 });
@@ -100,7 +101,7 @@ export function gateway(cfg = config()) {
     return finish(res, r.body.user);
   }
 
-  // ---------- the feed: the Jisst social network ----------
+  // ---------- the feed: the Jisste social network ----------
   let spaces = { at: 0, map: new Map() }, feedCache = { at: 0, items: [] };
   async function feed(space) {
     if (!cfg.feedUrl) return { items: [], on: false };
@@ -129,7 +130,7 @@ export function gateway(cfg = config()) {
   // ---------- routes ----------
   async function route(req, res) {
     const u = new URL(req.url, 'http://x'), p = u.pathname, ip = ipOf(req);
-    if (p === '/api/health') return json(res, 200, { ok: true, chat: (await mx.call('GET', '/_matrix/client/versions').catch(() => ({ status: 0 }))).status === 200, ways: await signinWays(), feed: !!cfg.feedUrl, push: true, calls: !!cfg.livekit.secret });
+    if (p === '/api/health') return json(res, 200, { ok: true, chat: (await mx.call('GET', '/_matrix/client/versions').catch(() => ({ status: 0 }))).status === 200, ways: await signinWays(), feed: !!cfg.feedUrl, push: true, calls: !!cfg.livekit.secret, stats: cfg.stats.url && cfg.stats.site ? cfg.stats : null, translate: !!cfg.translateUrl });
     if (p === '/api/signin/ways') return json(res, 200, await signinWays());
     if (req.method === 'POST' && p.startsWith('/api/signin/')) {
       if (limited('signin:' + ip, 40, 600e3)) return fail(res, 429, 'Too many tries. Please wait a few minutes.');
@@ -171,7 +172,7 @@ export function gateway(cfg = config()) {
       const acct = await mx.ensure(slug, 'Agent key');
       await mx.setName(acct.access_token, acct.user_id, name).catch(() => {});
       const rec = db.put('devagents', slug, { id: slug, mxid: acct.user_id, name, about: String(b.about || '').slice(0, 300), owner: me.id, ownerHandle: me.handle, public: !!b.public, made: Date.now() });
-      return json(res, 200, { agent: rec, key: acct.access_token, homeserver: cfg.publicUrl, note: 'Keep this key secret. It signs your agent in to Jisst through the Matrix client API. It is shown once.' });
+      return json(res, 200, { agent: rec, key: acct.access_token, homeserver: cfg.publicUrl, note: 'Keep this key secret. It signs your agent in to Jisste through the Matrix client API. It is shown once.' });
     }
     if (p === '/api/feed') return json(res, 200, await feed(String(u.searchParams.get('space') || '').slice(0, 40)));
     if (p === '/api/push/key') return json(res, 200, { key: vapid.publicKey });
@@ -188,6 +189,17 @@ export function gateway(cfg = config()) {
       const name = joined.joined[whoami.user_id].display_name || whoami.user_id;
       return json(res, 200, { url: cfg.livekit.url, token: callTicket(cfg.livekit, room, whoami.user_id, name) });
     }
+    if (p === '/api/translate' && req.method === 'POST') {
+      if (!cfg.translateUrl) return fail(res, 503, "Translation isn't switched on on this server yet.");
+      const s = who(req); if (!s) return fail(res, 401, 'Please sign in.');
+      if (limited('tr:' + s.u, 120, 600_000)) return fail(res, 429, 'Too many translations. Please wait a few minutes.');
+      const b = await body(req), text = String(b.text || '').slice(0, 4000), target = String(b.target || 'en').slice(0, 2).toLowerCase();
+      if (!text.trim()) return fail(res, 400, 'Nothing to translate.');
+      const r = await fetch(cfg.translateUrl + '/translate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, target }), signal: AbortSignal.timeout(30000) }).catch(() => null);
+      const out = r ? await r.json().catch(() => ({})) : {};
+      if (!r?.ok) return fail(res, r?.status === 422 ? 422 : 502, out.error || "Couldn't translate that right now.");
+      return json(res, 200, { text: String(out.text || ''), source: String(out.source || '') });
+    }
     if (p === '/api/push/subscribe' && req.method === 'POST') {
       const s = who(req); if (!s) return fail(res, 401, 'Please sign in.');
       const b = await body(req), sub = b.subscription;
@@ -203,7 +215,7 @@ export function gateway(cfg = config()) {
         const rec = db.get('push', d.pushkey);
         if (!rec) { rejected.push(d.pushkey); continue; }
         const text = n.content?.['io.jisst.text'] || n.content?.body || (n.type === 'm.room.member' ? 'invited you to a chat' : 'New message');
-        const st = await pushSend(rec.sub, { title: n.room_name || n.sender_display_name || 'Jisst', body: (n.room_name && n.sender_display_name ? n.sender_display_name + ': ' : '') + String(text).slice(0, 180), room: n.room_id, unread: n.counts?.unread || 0 }, vapid).catch(() => 0);
+        const st = await pushSend(rec.sub, { title: n.room_name || n.sender_display_name || 'Jisste', body: (n.room_name && n.sender_display_name ? n.sender_display_name + ': ' : '') + String(text).slice(0, 180), room: n.room_id, unread: n.counts?.unread || 0 }, vapid).catch(() => 0);
         if (st === 404 || st === 410) { db.del('push', d.pushkey); rejected.push(d.pushkey); }
       }
       return json(res, 200, { rejected });
@@ -212,7 +224,7 @@ export function gateway(cfg = config()) {
   }
 
   const server = http.createServer((req, res) => route(req, res).catch((e) => { log('error', req.url, e.message); if (!res.headersSent) fail(res, 500, 'Something went wrong. Please try again.'); }));
-  return { server, start() { server.listen(cfg.port, '127.0.0.1', () => log(`Jisst gateway on 127.0.0.1:${cfg.port}`)); B.start(); return this; }, stop() { B.stop(); server.close(); }, bots: B, db };
+  return { server, start() { server.listen(cfg.port, '127.0.0.1', () => log(`Jisste gateway on 127.0.0.1:${cfg.port}`)); B.start(); return this; }, stop() { B.stop(); server.close(); }, bots: B, db };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) gateway().start();
