@@ -55,6 +55,13 @@ export function demoEngine({ name = 'You' } = {}) {
   rooms.get('r-crew').community = 'c-lagos';
   rooms.get('r-lagos-news').read = 0; rooms.get('r-meetups').read = 1;
   rooms.get('r-family').fav = true;
+  // status updates (24 hours): user -> [{ id, text, bg, ts, seen }]
+  const status = new Map([
+    ['@tunde:demo', [{ id: 's1', kind: 'text', text: 'New lap record in Lagos 🏁', bg: '#0f7b5f', ts: t0 - 2 * H }]],
+    ['@zainab:demo', [{ id: 's2', kind: 'text', text: 'Jollof Sunday. Who is coming?', bg: '#b4472d', ts: t0 - 9 * H }, { id: 's3', kind: 'text', text: 'Kigali next month ✈️', bg: '#3b4fb8', ts: t0 - 40 * M }]],
+    ['@kofi:demo', [{ id: 's4', kind: 'text', text: 'Back from Accra. Missed you all', bg: '#6b3fa0', ts: t0 - 20 * H, seen: true }]],
+  ]);
+  const seenBy = new Map();   // my status id -> names
   rooms.get('r-tunde').read = 1; rooms.get('r-zainab').read = 2; rooms.get('r-family').read = 2;
 
   const ctxFor = (r, group) => ({ fetchJson: exampleFetch(now), now: () => new Date(), group, tz: -new Date().getTimezoneOffset(), user: { name: me.name }, urls: { agp: 'https://agentgrandprix.com', api: '' },
@@ -147,7 +154,8 @@ export function demoEngine({ name = 'You' } = {}) {
       const i = who.indexOf(me.user_id); if (i >= 0) who.splice(i, 1); else who.push(me.user_id);
       changed();
     },
-    async remove(roomId, id) { const e = rooms.get(roomId)?.events.find((x) => x.id === id); if (e) { e.deleted = true; changed(); } },
+    async remove(roomId, id) { if (roomId === 'st-me') { const l = status.get(me.user_id) || []; const i = l.findIndex((x) => x.id === id); if (i >= 0) l.splice(i, 1); changed(); return; }
+      const e = rooms.get(roomId)?.events.find((x) => x.id === id); if (e) { e.deleted = true; changed(); } },
     async sendRaw(roomId, content) { const r = rooms.get(roomId); push(r, ev(me.user_id, content.body, 0, { call: content['io.jisst.call'] || null })); },
     privateChats: () => true,
     async setFavorite(roomId, on) { rooms.get(roomId).fav = on; changed(); },
@@ -169,6 +177,20 @@ export function demoEngine({ name = 'You' } = {}) {
     },
     async addCommunityGroup(cid, name, extra = []) { const c = comms.get(cid), id = await api.createGroup(name, [...new Set([...c.members.filter((m) => m !== me.user_id), ...extra])]); rooms.get(id).community = cid; c.groups.push(id); changed(); return id; },
     async inviteToCommunity(cid, uid) { const c = comms.get(cid); if (!c.members.includes(uid)) c.members.push(uid); for (const id of [c.announce, ...c.groups]) { const r = rooms.get(id); if (r && !r.members.includes(uid)) r.members.push(uid); } changed(); },
+    statuses() {
+      const live = (list) => (list || []).filter((x) => x.ts > now() - D);
+      const mine = live(status.get(me.user_id)).map((x) => ({ ...x, seen: true, seenBy: seenBy.get(x.id) || [], status: 'sent' }));
+      const rest = [...status].filter(([u]) => u !== me.user_id && !blocked.has(u)).map(([u, list]) => { const items = live(list).map((x) => ({ ...x, seenBy: [] })); return { user: u, name: names.get(u), mine: false, roomId: 'st-' + u, items, unseen: items.filter((x) => !x.seen).length, ts: items.length ? items[items.length - 1].ts : 0 }; }).filter((x) => x.items.length);
+      return [{ user: me.user_id, name: 'You', mine: true, roomId: 'st-me', items: mine, unseen: 0, ts: mine.length ? mine[mine.length - 1].ts : 0 }, ...rest.sort((a, b) => (b.unseen > 0) - (a.unseen > 0) || b.ts - a.ts)];
+    },
+    async postStatus({ text, bg, file }) {
+      const list = status.get(me.user_id) || []; status.set(me.user_id, list);
+      const item = file ? { id: 's' + n++, kind: file.type.startsWith('video/') ? 'video' : 'image', url: URL.createObjectURL(file), local: null, text: '', ts: now() } : { id: 's' + n++, kind: 'text', text: String(text).slice(0, 700), bg: bg || '', ts: now() };
+      list.push(item); changed();
+      // the example people look at it over the next few seconds
+      ['Tunde Bakare', 'Zainab Musa', 'Mum'].forEach((nm, k) => setTimeout(() => { seenBy.set(item.id, [...(seenBy.get(item.id) || []), nm]); changed(); }, 2500 + k * 2000));
+    },
+    seeStatus(roomId, id) { for (const list of status.values()) for (const x of list) if (x.id === id && !x.seen) { x.seen = true; changed(); } },
     privacy: () => ({ ...privacy }),
     async setPrivacy(p) { privacy = { ...privacy, ...p }; changed(); },
     // agents are always online; people in the demo were seen a little while ago

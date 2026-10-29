@@ -37,7 +37,8 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     if (ev.type === 'm.room.name') r.name = ev.content?.name || '';
     if (ev.type === 'm.room.encryption') r.encrypted = true;
     if (ev.type === 'io.jisst.disappear') r.disappear = Math.max(0, +ev.content?.seconds || 0);
-    if (ev.type === 'm.room.create') { r.created = ev.origin_server_ts || r.created; if (ev.content?.type === 'm.space') r.space = true; }
+    if (ev.type === 'io.jisst.status') r.status = true;   // someone's status updates: a room only its owner posts in
+    if (ev.type === 'm.room.create') { r.created = ev.origin_server_ts || r.created; r.creator = ev.sender; if (ev.content?.type === 'm.space') r.space = true; }
     if (ev.type === 'm.room.topic') r.topic = ev.content?.topic || '';
     if (ev.type === 'm.room.power_levels') r.power = ev.content || null;
     // communities are Matrix spaces: the space lists its chats (m.space.child) and each chat names its community (m.space.parent)
@@ -125,6 +126,8 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
       call('POST', `${C}/join/${enc(id)}`, {}).catch(() => {});
     }
     for (const id of Object.keys(s.rooms?.leave || {})) rooms.delete(id);
+    // statuses and communities never buzz your phone: alerts come from the chats themselves
+    if (ready) for (const r of rooms.values()) if ((r.status || r.space) && r.membership === 'join' && !muted.has(r.id) && !r.quieted) { r.quieted = true; call('PUT', `${C}/pushrules/global/room/${enc(r.id)}`, { actions: [] }).catch(() => {}); }
     if (crypto) {
       if (locked.size) await retryLocked();
       const people = new Set();
@@ -212,6 +215,35 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
   const link = (space, child, extra = {}) => Promise.all([
     call('PUT', `${C}/rooms/${enc(space)}/state/m.space.child/${enc(child)}`, { via: [user_id.split(':')[1]], ...extra }),
     call('PUT', `${C}/rooms/${enc(child)}/state/m.space.parent/${enc(space)}`, { via: [user_id.split(':')[1]], canonical: true })]);
+  // ---------- status updates ----------
+  const DAY = 86400;
+  const myStatusRoom = () => [...rooms.values()].find((r) => r.status && r.creator === user_id && r.membership === 'join');
+  // the people who see your status: everyone you have a one-to-one chat with (agents don't watch statuses)
+  const contacts = () => [...new Set([...rooms.values()].filter((r) => r.membership === 'join' && !r.space && !r.status && (isDirect(r.id) || (!r.name && others(r).length === 1)))
+    .flatMap((r) => others(r).map((m) => m.id)))].filter((u) => !agents.has(u) && !blocked.has(u));
+  async function statusRoom() {
+    let r = myStatusRoom();
+    if (!r) {
+      const { room_id } = await call('POST', `${C}/createRoom`, { name: 'Status', invite: contacts(), preset: 'private_chat', power_level_content_override: { events_default: 100, users: { [user_id]: 100 } },
+        initial_state: [...(cryptoFailed ? [] : [ENCRYPTION]), { type: 'io.jisst.status', state_key: '', content: {} }, { type: 'io.jisst.disappear', state_key: '', content: { seconds: DAY } }] });
+      r = room(room_id); r.status = true; r.creator = user_id; r.disappear = DAY; if (!cryptoFailed) r.encrypted = true;
+      await until(() => r.members.has(user_id));
+    } else {
+      // people you started chatting with since get to see it too
+      for (const u of contacts()) if (!r.members.has(u) || r.members.get(u).membership === 'leave') await call('POST', `${C}/rooms/${enc(r.id)}/invite`, { user_id: u }).catch(() => {});
+    }
+    return r;
+  }
+  async function until(fn, ms = 8000) { const end = now() + ms; while (!fn() && now() < end) await new Promise((ok) => setTimeout(ok, 100)); }
+  function statusOf(r) {
+    const mine = r.creator === user_id, readIdx = r.readUpTo ? r.events.findIndex((e) => e.event_id === r.readUpTo) : -1;
+    const items = r.events.map((ev, i) => [ev, i]).filter(([ev]) => ev.type === 'm.room.message' && ev.sender === r.creator).map(([ev, i]) => {
+      const v = view(ev, r); if (!v || v.deleted || v.waiting) return null;
+      const seenBy = mine && ev.event_id ? [...r.receipts].filter(([u, eid]) => u !== user_id && r.events.findIndex((e) => e.event_id === eid) >= i).map(([u]) => names.get(u) || u) : [];
+      return { id: v.id, kind: v.kind, text: v.text, bg: ev.content?.['io.jisst.bg'] || '', url: v.url, local: v.local, info: v.info, ts: v.ts, seen: mine || i <= readIdx, seenBy, status: v.status };
+    }).filter((x) => x && x.ts > now() - DAY * 1000);
+    return { user: r.creator, name: mine ? 'You' : names.get(r.creator) || r.creator, mine, roomId: r.id, items, unseen: items.filter((x) => !x.seen).length, ts: items.length ? items[items.length - 1].ts : 0 };
+  }
   function summary(r) {
     const o = others(r), dm = isDirect(r.id) || (!r.name && o.length === 1);
     const other = dm ? o[0] : null;
@@ -254,7 +286,7 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
     start() { loop(); return this; },
     stop() { stopped = true; clearInterval(sweeper); },
     onchange(f) { subs.add(f); return () => subs.delete(f); },
-    rooms: () => [...rooms.values()].filter((r) => r.membership === 'join' && !r.space).map(summary).sort((a, b) => b.ts - a.ts),
+    rooms: () => [...rooms.values()].filter((r) => r.membership === 'join' && !r.space && !r.status).map(summary).sort((a, b) => b.ts - a.ts),
     room: (id) => (rooms.has(id) ? summary(rooms.get(id)) : null),
     timeline: (id) => { const r = rooms.get(id); return r ? r.events.map((e) => view(e, r)).filter(Boolean) : []; },
     name: (uid) => names.get(uid) || '',
@@ -401,6 +433,24 @@ export function matrixEngine({ homeserver, user_id, access_token, device_id }, {
       const c = this.community(spaceId); if (!c) throw new Error('No such community.');
       await call('POST', `${C}/rooms/${enc(spaceId)}/invite`, { user_id: uid });
       for (const id of [c.announce, ...c.groups].filter(Boolean)) await call('POST', `${C}/rooms/${enc(id)}/invite`, { user_id: uid }).catch(() => {});
+    },
+    /** Status updates from the last 24 hours: yours first, then people with new ones, then the rest. */
+    statuses() {
+      const all = [...rooms.values()].filter((r) => r.status && r.membership === 'join' && r.creator && !blocked.has(r.creator)).map(statusOf);
+      const mine = all.find((x) => x.mine) || { user: user_id, name: 'You', mine: true, roomId: null, items: [], unseen: 0, ts: 0 };
+      return [mine, ...all.filter((x) => !x.mine && x.items.length).sort((a, b) => (b.unseen > 0) - (a.unseen > 0) || b.ts - a.ts)];
+    },
+    async postStatus({ text, bg, file }) {
+      const r = await statusRoom();
+      if (file) return this.sendFile(r.id, file, file.type.startsWith('video/') ? 'video' : 'image');
+      return sendContent(r.id, { msgtype: 'm.text', body: String(text).slice(0, 700), 'io.jisst.bg': bg || '' });
+    },
+    /** Mark a status as seen (the owner sees who has seen it, unless your read ticks are off). */
+    seeStatus(roomId, eventId) {
+      const r = rooms.get(roomId); if (!r || !eventId || eventId.startsWith('j')) return;
+      if (r.readUpTo && !later(r, eventId, r.readUpTo)) return;
+      r.readUpTo = eventId; changed();
+      call('POST', `${C}/rooms/${enc(roomId)}/receipt/${privacy.readTicks ? 'm.read' : 'm.read.private'}/${enc(eventId)}`, {}).catch(() => {});
     },
     /** Report a message to the people who run Jisste. */
     report: (roomId, eventId, reason) => call('POST', `${C}/rooms/${enc(roomId)}/report/${enc(eventId)}`, { reason: String(reason).slice(0, 500), score: -100 }),

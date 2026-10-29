@@ -47,3 +47,19 @@ test('a community has announcements only admins post in, groups for everyone, an
   assert.equal(k.members, 3);
   assert.equal(kofi.communities().length, 1);
 });
+
+test('a status reaches your chats for 24 hours, and you see who has seen it', async () => {
+  const { ada, tunde, kofi } = ppl;
+  const dm = await ada.openDirect('@tunde:jisste.com');
+  await until(() => tunde.room(dm));
+  await ada.postStatus({ text: 'Race night!', bg: '#0f7b5f' });
+  const st = await until(() => tunde.statuses().find((x) => x.user === '@ada:jisste.com' && x.items.length));
+  assert.equal(st.items[0].text, 'Race night!'); assert.equal(st.items[0].bg, '#0f7b5f'); assert.equal(st.unseen, 1);
+  assert.ok(!tunde.rooms().some((r) => r.id === st.roomId), 'a status is not a chat');
+  assert.equal(kofi.statuses().filter((x) => !x.mine).length, 0, 'only your chats see it');
+  await assert.rejects(tunde.send(st.roomId, 'reply in the status room'));
+  tunde.seeStatus(st.roomId, st.items[0].id);
+  assert.equal(tunde.statuses().find((x) => x.user === '@ada:jisste.com').unseen, 0);
+  await until(() => ada.statuses()[0].items[0]?.seenBy.length === 1);
+  assert.equal(ada.statuses()[0].mine, true);
+});

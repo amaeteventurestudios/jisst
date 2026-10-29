@@ -388,3 +388,40 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
 .btn.small { width: auto; padding: 6px 14px; font-size: 13px; margin-left: auto; }
 .blockedbar { padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); text-align: center; color: var(--muted); font-size: 14px; background: var(--panel); border-top: 1px solid var(--line); }
 .linkbtn { color: var(--brand); font-weight: 600; }
+
+/* status updates: a strip of rings above the chat list, and a full-screen viewer */
+.stories { display: flex; gap: 12px; overflow-x: auto; padding: 8px 14px 10px; scrollbar-width: none; border-bottom: 1px solid var(--line); }
+.stories::-webkit-scrollbar { display: none; }
+.story { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 62px; flex: none; }
+.story small { font-size: 12px; color: var(--muted); max-width: 62px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.story .sring { display: grid; place-items: center; position: relative; width: 56px; height: 56px; flex: none; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--line); }
+.story.new .sring { box-shadow: inset 0 0 0 2.5px var(--brand); }
+.story .sring .av { width: 48px; height: 48px; border: 2px solid var(--panel); }
+.story .plus { position: absolute; right: -1px; bottom: -1px; width: 20px; height: 20px; border-radius: 50%; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; border: 2px solid var(--panel); }
+.story .plus svg { width: 13px; height: 13px; stroke-width: 3; }
+.story:not(.add) .plus { display: none; }
+.sttext { width: 100%; border: 0; border-radius: 14px; color: #fff; font-size: 20px; font-weight: 600; text-align: center; padding: 22px 14px; resize: none; }
+.sttext::placeholder { color: rgba(255, 255, 255, .7); }
+.swatches { display: flex; gap: 10px; margin: 10px 0; }
+.swatches button { width: 30px; height: 30px; border-radius: 50%; }
+.swatches button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--ink); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.row2 .btn { margin-top: 0 !important; }
+.story-view { position: fixed; inset: 0; z-index: 80; color: #fff; display: flex; flex-direction: column; }
+.story-view .bars { display: flex; gap: 4px; padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 6px; position: relative; z-index: 2; }
+.story-view .bars i { flex: 1; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, .35); overflow: hidden; position: relative; }
+.story-view .bars i.done { background: #fff; }
+.story-view .bars i.now::after { content: ""; position: absolute; inset: 0; background: #fff; transform-origin: left; animation: storybar 5s linear forwards; }
+@keyframes storybar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .story-view .bars i.now::after { animation: none; transform: scaleX(1); opacity: .6; } }
+.story-view header { display: flex; align-items: center; gap: 10px; padding: 4px 8px 4px 14px; position: relative; z-index: 2; }
+.story-view header .who { flex: 1; display: flex; flex-direction: column; min-width: 0; } .story-view header small { opacity: .8; }
+.story-view .iconbtn { color: #fff; }
+.story-view .stbody { flex: 1; display: grid; place-items: center; padding: 20px; min-height: 0; }
+.story-view .stbody img, .story-view .stbody video { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.story-view .stbody img.checking, .story-view .stbody img.hidden { filter: blur(28px); }
+.sttextview { font-size: clamp(22px, 6vw, 34px); font-weight: 650; text-align: center; max-width: 640px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.story-view .tap { position: absolute; top: 80px; bottom: 70px; z-index: 1; }
+.story-view .tap.prev { left: 0; width: 33%; } .story-view .tap.next { right: 0; width: 67%; }
+.story-view footer { display: flex; align-items: center; gap: 8px; padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px)); background: rgba(0, 0, 0, .25); position: relative; z-index: 2; font-size: 14px; }
+.story-view footer svg { width: 20px; height: 20px; } .story-view footer .linkbtn { margin-left: auto; color: #fff; font-weight: 700; }
