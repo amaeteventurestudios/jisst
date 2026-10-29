@@ -5,6 +5,8 @@
 #   - the call server (LiveKit, Apache 2.0) for voice and video calls and screen sharing: signalling on 127.0.0.1:7880 behind
 #     Caddy at /livekit, media on 7881/tcp and 50000-60000/udp, and its own TURN relay on 3478/udp for strict networks;
 #   - the translator (server/translate.py: Argos models on CTranslate2, all permissive) on 127.0.0.1:8305;
+#   - only when the repo variable JISST_LOCAL_AI is yes: a free local model (Qwen3 1.7B, Apache 2.0) on llama.cpp (MIT) at
+#     127.0.0.1:8306, so the helper agent can answer open questions without any AI bill;
 #   - a nightly snapshot of the chat server's database at 03:15 UTC, which Noveniqe's nightly backup (03:30) copies;
 #   - the app's files served by the shared Caddy web server through Jisste's own site file /etc/caddy/sites/jisst.caddy.
 # Never touches /etc/caddy/Caddyfile or another project's site file. Secrets are made once on the server and never leave it.
@@ -54,6 +56,7 @@ setkv JISST_PUBLIC_URL "https://$MAIN"
 [ -n "$(getkv JISST_LIVEKIT_SECRET)" ] || { setkv JISST_LIVEKIT_KEY "jisst$(openssl rand -hex 6)"; setkv JISST_LIVEKIT_SECRET "$(openssl rand -hex 32)"; }
 setkv JISST_LIVEKIT_URL "wss://$MAIN/livekit"
 setkv JISST_TRANSLATE_URL "http://127.0.0.1:8305"
+setkv JISST_LOCAL_AI_URL ""
 # Visitor stats: Noveniqe's Umami (noveniqe repo ops/server/monitoring.sh) leaves where it lives and Jisste's site id here
 if [ -f /etc/novenique/umami.public ]; then
   setkv JISST_STATS_URL "$(sed -n 's/^URL=//p' /etc/novenique/umami.public)"; setkv JISST_STATS_SITE "$(sed -n 's/^SITE_JISST=//p' /etc/novenique/umami.public)"
@@ -202,6 +205,23 @@ translator() {
   sudo -u jisst "$TR/venv/bin/python" "$APP/server/translate.py" --install "$DATA/translate" || return 1
 }
 translator || { echo "Note: the translator didn't finish installing; Translate stays off until the next deploy."; setkv JISST_TRANSLATE_URL ''; }
+# The local model, off unless asked for. Built once from source for this processor (about 15 minutes the first time).
+LLAMA_V=b11983 LLAMA=/opt/jisst-llama MODEL_URL=https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf
+local_ai() {
+  if [ "$(cat "$LLAMA/.version" 2>/dev/null)" != "$LLAMA_V" ]; then
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential cmake git >/dev/null || return 1
+    sudo rm -rf "$LLAMA.src" && sudo git clone -q --depth 1 --branch "$LLAMA_V" https://github.com/ggml-org/llama.cpp.git "$LLAMA.src" || return 1
+    (cd "$LLAMA.src" && sudo cmake -B build -DLLAMA_CURL=OFF -DGGML_NATIVE=ON -DCMAKE_BUILD_TYPE=Release >/dev/null && sudo cmake --build build --target llama-server -j "$(nproc)" >/dev/null) || return 1
+    sudo mkdir -p "$LLAMA" && sudo cp "$LLAMA.src/build/bin/llama-server" "$LLAMA/" && sudo cp "$LLAMA.src/LICENSE" "$LLAMA/" && echo "$LLAMA_V" | sudo tee "$LLAMA/.version" >/dev/null || return 1
+    sudo rm -rf "$LLAMA.src"
+  fi
+  [ -s "$LLAMA/model.gguf" ] || { sudo curl -fsSL "$MODEL_URL" -o "$LLAMA/model.gguf.part" && sudo mv "$LLAMA/model.gguf.part" "$LLAMA/model.gguf"; } || return 1
+  unit jisst-ai "Jisste local model (llama.cpp, loopback only)" "$LLAMA/llama-server -m $LLAMA/model.gguf --host 127.0.0.1 --port 8306 -c 4096 -t 2 --parallel 1" ""
+  sudo systemctl daemon-reload && sudo systemctl enable jisst-ai >/dev/null && sudo systemctl restart jisst-ai
+  setkv JISST_LOCAL_AI_URL "http://127.0.0.1:8306"
+}
+if [ "${JISST_LOCAL_AI:-}" = yes ]; then local_ai || echo "Note: the local model didn't finish installing; the helper keeps its usual answers."
+else sudo systemctl disable --now jisst-ai 2>/dev/null || true; fi
 unit jisst-translate "Jisste translator (loopback only)" "$TR/venv/bin/python $APP/server/translate.py --serve $DATA/translate" ""
 sudo systemctl daemon-reload
 sudo systemctl enable jisst-chat jisst-gateway jisst-calls jisst-translate >/dev/null

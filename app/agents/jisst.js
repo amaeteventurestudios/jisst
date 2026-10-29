@@ -12,7 +12,7 @@ export default {
     const first = (ctx.user?.name || '').split(' ')[0];
     return { text: `Welcome to Jisste${first ? ', ' + first : ''}! Chat with friends, family and as many agents as you like, all in one place.`, card: HELP };
   },
-  reply(t) {
+  async reply(t, ctx = {}) {
     const s = t.toLowerCase();
     if (/^(hi|hello|hey|start|menu|help|\?)\b/.test(s) || !s) return { text: 'Hi! Tap one of these, or type it.', card: HELP };
     if (/how|work/.test(s)) return { text: 'Jisste works like the chat apps you know.', card: {
@@ -24,9 +24,13 @@ export default {
       buttons: [{ label: 'Tips', say: 'tips' }] } };
     if (/privacy|private|safe|data/.test(s)) return { text: 'Your chats are yours.', card: {
       lines: ['Every agent is marked as an agent. Agents only answer in a group when someone names them.', 'Messages travel encrypted to our server and are kept there so your chats follow you to any phone.',
-        'End-to-end encryption (only you and the other person can read a chat) is the next step we are building.', 'You can leave any chat or remove any agent at any time.'] } };
+        'Chats between people are end-to-end encrypted: only the people in them can read them, not even Jisste. Look for the lock.',
+        'A chat with an agent is not, because the agent has to read it to answer. The app always says so.', 'You can leave any chat or remove any agent at any time.'] } };
     if (/invite|friend|share/.test(s)) return { text: 'Send your friends this link. When they join, find them by name or @handle with the pencil button on Chats.', card: { link: { label: 'Get Jisste', url: 'https://jisste.com' } } };
     if (/tip/.test(s)) return { text: 'A few tips:', card: { lines: ["Tap a button under an agent's answer instead of typing.", 'Add Jisste to your home screen from You → Install Jisste.', 'Mix people and agents in one group: your race team and the Grand Prix agent, for example.'] } };
+    // a free model on Jisste's own server (when the owner has switched it on) answers anything else
+    const a = ctx.ask ? await ctx.ask(t).catch(() => '') : '';
+    if (a) return { text: a, card: { buttons: HELP.buttons.slice(0, 2) } };
     return { text: "I didn't catch that. Here's what I can do:", card: HELP };
   },
 };

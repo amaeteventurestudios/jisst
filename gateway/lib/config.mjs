@@ -29,6 +29,7 @@ export function config(env = process.env) {
     devSignin: env.JISST_DEV_SIGNIN === '1',                           // tests only: sign in without Noveniqe Core
     bots: env.JISST_BOTS !== '0',
     // calls (LiveKit on this server); the key and secret are made by server/install.sh
+    localAi: url(env.JISST_LOCAL_AI_URL, ''),                          // llama.cpp's server, only when the owner switched it on
     translateUrl: url(env.JISST_TRANSLATE_URL, ''),                    // the translator on this server (server/translate.py)
     // visitor stats (Umami, on the shared server): where its tracker lives and Jisste's site id; empty means none
     stats: { url: (env.JISST_STATS_URL || '').replace(/\/+$/, ''), site: env.JISST_STATS_SITE || '' },

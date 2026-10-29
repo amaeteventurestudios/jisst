@@ -312,3 +312,9 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
 .trans small { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 11px; margin-bottom: 2px; }
 .trans small svg { width: 13px; height: 13px; }
 .trans.busy { color: var(--muted); }
+/* photo safety: blurred while the phone checks it, hidden if it may be explicit */
+.photobox { position: relative; }
+.photobox.checking img, .photobox.hidden img { filter: blur(28px) saturate(.6); }
+.photobox img { transition: filter .25s; }
+.showphoto { position: absolute; inset: 0 -4px 4px; display: grid; place-items: center; padding: 16px; text-align: center; color: #fff; font-weight: 600; font-size: 14px; background: rgba(0, 0, 0, .35); border-radius: 10px; }
+@media (prefers-reduced-motion: reduce) { .photobox img { transition: none; } }

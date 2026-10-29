@@ -7,6 +7,17 @@ import { AGENTS, answer, plain } from '../../app/agents/index.js';
 
 const agentContent = (r) => ({ msgtype: 'm.text', body: plain(r), 'io.jisst.text': r.text, ...(r.card ? { 'io.jisst.card': r.card } : {}) });
 
+/** One short answer from the local model (llama.cpp's server with Qwen3, on this server; no AI spend). '' when it can't. */
+export async function askLocal(url, agent, question) {
+  const r = await fetch(url + '/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(60000),
+    body: JSON.stringify({ max_tokens: 300, temperature: 0.6, messages: [
+      { role: 'system', content: `You are ${agent.name}, the helper inside the Jisste chat app. Answer in two or three short, friendly sentences, in the language of the question. You can't see the user's chats. If you don't know, say so.` },
+      { role: 'user', content: String(question).slice(0, 1000) + ' /no_think' }] }) });
+  if (!r.ok) return '';
+  const j = await r.json().catch(() => ({}));
+  return String(j.choices?.[0]?.message?.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim().slice(0, 1200);
+}
+
 export function bots(cfg, mx, db, { fetchJson, log = () => {} }) {
   const live = new Map();          // agent id -> { user_id, access_token }
   let stopped = false;
@@ -22,7 +33,8 @@ export function bots(cfg, mx, db, { fetchJson, log = () => {} }) {
     const text = ev.content?.body;
     if (typeof text !== 'string' || !text.trim()) return;
     const ctx = { fetchJson, now: () => new Date(), group, tz: Number.isFinite(+ev.content['io.jisst.tz']) ? +ev.content['io.jisst.tz'] : 0,
-      user: { name: '' }, urls: { agp: cfg.agpUrl, api: `http://127.0.0.1:${cfg.port}` }, ...reminderCtx(agent.id, ev.sender, roomId) };
+      user: { name: '' }, urls: { agp: cfg.agpUrl, api: `http://127.0.0.1:${cfg.port}` }, ...reminderCtx(agent.id, ev.sender, roomId),
+      ask: cfg.localAi ? (q) => askLocal(cfg.localAi, agent, q) : undefined };
     const typing = (on) => mx.typing(me.access_token, me.user_id, roomId, on).catch(() => {});
     typing(true);
     try {

@@ -6,6 +6,7 @@ import { demoEngine, EXAMPLE_FEED } from './demo.js';
 import { AGENTS, SOON } from '../agents/index.js';
 import { BRAND, html, raw, esc, icon, avatar, when, hhmm, dayLabel, ago, linkify, toast, store } from './ui.js';
 import { calls, callBubble, callStates } from './calls.js';
+import { judge, known } from './safety.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const app = $('#app');
@@ -340,6 +341,7 @@ function tabYou() {
     <div class="me">${avatar({ id: me.user_id, name: me.name, size: 'lg' })}<h2>${me.name || 'You'}</h2><p>${handle ? '@' + handle : S.demo ? 'Demo account' : ''}</p></div>
     <button class="set" data-act="rename">${icon('pencil')}<span class="mid">Edit your name</span></button>
     ${standalone ? '' : html`<button class="set" data-act="install">${icon('download')}<span class="mid">Install ${BRAND.name}<small>${ios ? 'In Safari: Share, then Add to Home Screen' : 'Put it on your home screen like any app'}</small></span></button>`}
+    <div class="set">${icon('eye')}<span class="mid">Blur explicit photos<small>Checked on this phone, so private chats stay private</small></span><button class="switch" role="switch" aria-checked="${store.get('safePhotos', true)}" aria-label="Blur explicit photos" data-act="safe-photos"></button></div>
     <div class="set">${icon('bell')}<span class="mid">Message alerts<small>${S.demo ? 'Works on the real app' : 'Get a notice when a message arrives'}</small></span><button class="switch" role="switch" aria-checked="${S.pushOn && !S.demo}" aria-label="Message alerts" data-act="push" ${S.demo ? 'disabled' : ''}></button></div>
     <div class="set">${icon('moon')}<span class="mid">Appearance</span><span class="seg">${['system', 'light', 'dark'].map((t) => html`<button data-theme="${t}" aria-pressed="${theme === t}">${t[0].toUpperCase() + t.slice(1)}</button>`)}</span></div>
     <button class="set" data-act="invite">${icon('link')}<span class="mid">Invite a friend<small>${BRAND.site.replace('https://', '')}</small></span></button>
@@ -392,7 +394,10 @@ function bubble(m, prev, r) {
   const from = !r.dm && !m.mine && first ? html`<div class="from" style="color:${ag?.color || 'var(--brand)'}">${m.senderName}${ag ? html`<span class="tag">Agent</span>` : ''}</div>` : '';
   const meta = html`<span class="meta">${hhmm(m.ts)}${m.mine ? ticks(m.status) : ''}</span>`;
   let content;
-  if (m.kind === 'image') content = html`<img class="photo" data-mxc="${m.url || ''}" src="${m.local || ''}" alt="Photo">${meta}`;
+  if (m.kind === 'image') {
+    const key = m.url || m.local || m.id, check = !m.mine && store.get('safePhotos', true), v = check ? known(key) : 'ok';
+    content = html`<div class="photobox ${v === 'ok' ? '' : v === 'hide' ? 'hidden' : 'checking'}" data-key="${key}"><img class="photo" data-mxc="${m.url || ''}" src="${m.local || ''}" alt="Photo" ${v ? '' : raw('data-check="1"')}>${v === 'hide' ? html`<button type="button" class="showphoto" data-act="show-photo">This photo may be explicit. Show it</button>` : ''}</div>${meta}`;
+  }
   else if (m.kind === 'voice') content = html`<div class="voice"><button type="button" data-voice="${m.url || ''}" data-local="${m.local || ''}" aria-label="Play voice message">${icon('play')}</button><span class="bar"><i></i></span><small>${m.info?.duration ? fmtDur(m.info.duration / 1000) : ''}</small>${meta}</div>`;
   else content = html`<div class="txt">${linkify(m.text)}${meta}</div>`;
   const c = m.card;
@@ -421,6 +426,11 @@ function chatUpdate(initial = false) {
   });
   wall.innerHTML = out.join('');
   for (const img of wall.querySelectorAll('img[data-mxc]')) if (img.dataset.mxc && !img.getAttribute('src')) S.engine.media(img.dataset.mxc).then((u) => { img.src = u; }).catch(() => {});
+  for (const img of wall.querySelectorAll('img[data-check]')) {
+    const box = img.closest('.photobox'), key = box.dataset.key;
+    const go = () => judge(img, key).then((v) => { const b = $(`.photobox[data-key="${CSS.escape(key)}"]`); if (!b) return; b.classList.remove('checking'); if (v === 'hide') { b.classList.add('hidden'); b.insertAdjacentHTML('beforeend', String(html`<button type="button" class="showphoto" data-act="show-photo">This photo may be explicit. Show it</button>`)); } });
+    img.getAttribute('src') ? go() : img.addEventListener('load', go, { once: true });
+  }
   if (near) wall.scrollTop = wall.scrollHeight;
   if (document.visibilityState === 'visible') S.engine.markRead(S.room);
 }
@@ -435,6 +445,7 @@ function composerState() { const has = $('#msg')?.value.trim(); const b = $('#se
 let typingT = 0;
 async function sendText(text) {
   text = text.trim(); if (!text || !S.room) return;
+  if (typingT) { typingT = 0; S.engine.typing(S.room, false); }
   try { await S.engine.send(S.room, text); } catch (e) { toast("Couldn't send. Check your connection and try again."); }
 }
 async function startRecording() {
@@ -559,6 +570,8 @@ document.addEventListener('click', async (e) => {
     case 'copy-key': try { await navigator.clipboard.writeText($('#agentkey').textContent); toast('Key copied'); } catch { getSelection().selectAllChildren($('#agentkey')); toast('Selected: copy it now'); } return;
     case 'rename': S.view = 'rename'; return side();
     case 'install': if (S.installEvt) { S.installEvt.prompt(); S.installEvt = null; } else toast(/iphone|ipad/i.test(navigator.userAgent) ? 'In Safari, tap Share, then Add to Home Screen.' : 'Use your browser menu: Install app, or Add to Home Screen.'); return;
+    case 'show-photo': { const b = t.closest('.photobox'); b.classList.remove('hidden'); t.remove(); return; }
+    case 'safe-photos': { const on = t.getAttribute('aria-checked') !== 'true'; store.set('safePhotos', on); t.setAttribute('aria-checked', String(on)); return; }
     case 'push': { const on = t.getAttribute('aria-checked') !== 'true';
       if (on) { try { S.pushOn = await enablePush(); } catch { S.pushOn = false; toast("Couldn't turn alerts on."); } }
       else { const p = store.get('pusher'); if (p) await S.engine.setPusher(p, false).catch(() => {}); S.pushOn = false; }
