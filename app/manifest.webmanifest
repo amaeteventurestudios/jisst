@@ -7,8 +7,8 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#F4F2FB",
-  "theme_color": "#5B3DF5",
+  "background_color": "#F7F2EC",
+  "theme_color": "#BF4D2B",
   "categories": ["social", "games"],
   "icons": [
     { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" },
