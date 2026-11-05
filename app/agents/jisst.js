@@ -5,7 +5,7 @@ const HELP = { title: 'What I can help with', buttons: [
 ] };
 
 export default {
-  id: 'jisst', name: 'Jisste', glyph: 'J', color: '#5B3DF5', kind: 'Jisste',
+  id: 'jisst', name: 'Jisste', glyph: 'J', color: 'var(--brand)', kind: 'Jisste',
   about: 'Your guide to Jisste. Ask how things work, find agents, or invite friends.',
   commands: ['how', 'agents', 'privacy', 'invite', 'tips'],
   hello(ctx) {

@@ -49,7 +49,7 @@ html.phone .under { position: absolute; inset: 0; background: var(--bg); z-index
 /* ---------- lists ---------- */
 html.phone .row { min-height: 76px; }
 html.phone .row .name { font-size: 16.5px; }
-html.phone .fab { bottom: 16px; border-radius: 20px; box-shadow: 0 6px 18px rgba(91, 61, 245, .38); }
+html.phone .fab { bottom: 16px; border-radius: 20px; box-shadow: 0 6px 18px color-mix(in srgb, var(--brand) 38%, transparent); }
 html.phone .chips { padding-bottom: 8px; }
 
 /* swipe a chat sideways for quick actions (rules below, with the peek) */
@@ -119,4 +119,22 @@ html.phone #chatlist .row.swiping { position: relative; z-index: 1; background: 
 @media (max-width: 899px) and (pointer: coarse) {
   .boot { position: fixed; inset: 0; margin: 0; place-content: center; background: var(--brand); color: rgba(255, 255, 255, .85); gap: 14px; }
   .boot .mark { background: #fff; color: var(--brand); width: 84px; height: 84px; border-radius: 26px; font-size: 46px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
+}
+
+
+/* ---------- symmetrical on phones: titles, subtitles, icons and buttons sit on the middle line, with even edges ---------- */
+@media (max-width: 899px) {
+  .side > .top h1 { text-align: center; transform-origin: center; }
+  /* a back button or an action on one side only: balance it with the same space on the other side */
+  .side > .top:has(> [data-act="back"]):not(:has(> :not(h1):not([data-act="back"]))) h1 { padding-right: 48px; }
+  .side > .top:not(:has(> [data-act="back"])):has(> :not(h1)) h1 { padding-left: 48px; }
+  .side .chips, .side .stories { justify-content: safe center; }
+  .welcome .inner { justify-items: center; text-align: center; }
+  .welcome .inner > form, .welcome .inner > .btn { width: 100%; }
+  .welcome .points { justify-self: center; justify-items: start; text-align: left; }
+  .welcome .field label { display: block; text-align: center; }
+  .welcome .field input { text-align: center; }
+  .sheet .pollform > h3, .sheet .picker > h3, .sheet .pollform > .fine { text-align: center; }
+  .side .pad > .note, .fine.pad.intro { text-align: center; }
+  .empty { padding-left: 16px; padding-right: 16px; }
 }

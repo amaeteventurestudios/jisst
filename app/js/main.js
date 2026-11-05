@@ -544,7 +544,7 @@ function tabCalls() {
   }
   list.sort((a, b) => b.m.ts - a.m.ts);
   return html`${top('Calls')}<div class="scroll">
-    <p class="fine pad" style="text-align:left;padding-bottom:0">Free voice and video calls, and screen sharing. Private chats get private calls. To start one, open a chat and tap the phone or camera.</p>
+    <p class="fine pad intro">Free voice and video calls, and screen sharing. Private chats get private calls. To start one, open a chat and tap the phone or camera.</p>
     ${list.length ? html`<div class="section">Recent</div>${list.slice(0, 60).map(({ r, m, live }) => html`<div class="row">${avatar({ id: r.other || r.id, name: r.name, group: !r.dm, size: 'sm' })}
       <span class="mid"><span class="l1"><span class="name">${r.name}</span></span><span class="l2"><span class="prev callline ${m.mine ? '' : 'in'}">${icon(m.mine ? 'callout' : 'callin')}${m.mine ? 'Outgoing' : 'Incoming'} ${m.call.video ? 'video' : 'voice'} call · ${when(m.ts)}${live ? ' · going on now' : ''}</span></span></span>
       ${live ? html`<button type="button" class="pill" data-joinroom="${r.id}" data-joinid="${m.id}">Join</button>` : html`<button type="button" class="iconbtn" data-callback="${r.id}" data-video="${m.call.video ? 1 : ''}" aria-label="Call ${r.name} again">${icon(m.call.video ? 'video' : 'calls')}</button>`}</div>`)}`
@@ -1069,7 +1069,7 @@ function sheet(inner, label) {
 }
 function openAttach() {
   sheet(html`<div class="attach">
-    <button type="button" data-act="att-doc"><span style="background:#5b3df5">${icon('doc')}</span>Document</button>
+    <button type="button" data-act="att-doc"><span style="background:var(--brand)">${icon('doc')}</span>Document</button>
     <label><span style="background:#e0567a">${icon('camera')}</span>Photo or video<input type="file" accept="image/*,video/*" id="photo" hidden></label>
     <button type="button" data-act="att-contact"><span style="background:#0e7c86">${icon('you')}</span>Contact</button>
     <button type="button" data-act="att-poll"><span style="background:#e08a00">${icon('poll')}</span>Poll</button>
@@ -1120,7 +1120,7 @@ function maps(root) {
       const map = L.map(el, { zoomControl: false, attributionControl: true, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false }).setView(at, 15);
       map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
-      L.circleMarker(at, { radius: 8, color: '#fff', weight: 3, fillColor: '#5b3df5', fillOpacity: 1 }).addTo(map);
+      L.circleMarker(at, { radius: 8, color: '#fff', weight: 3, fillColor: getComputedStyle(document.documentElement).getPropertyValue('--brand').trim() || '#5b3df5', fillOpacity: 1 }).addTo(map);
     }
   }).catch(() => {});
 }
