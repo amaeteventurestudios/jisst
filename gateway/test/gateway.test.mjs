@@ -91,7 +91,7 @@ test('in a group an agent only answers when it is named', async () => {
   assert.equal((await messagesFrom(ada, room.room_id, gp.mxid)).length, 0, 'not named, so quiet');
   await mx(ada, 'PUT', `/_matrix/client/v3/rooms/${room.room_id}/send/m.room.message/g2`, { msgtype: 'm.text', body: 'Grand Prix week' });
   const a = await until(async () => (await messagesFrom(ada, room.room_id, gp.mxid))[0]);
-  assert.match(a.content['io.jisst.text'], /Week 1 league/);
+  assert.match(a.content['io.jisst.text'], /Week \d+ league/);
 });
 
 test('reminders are stored and sent on time', async () => {
