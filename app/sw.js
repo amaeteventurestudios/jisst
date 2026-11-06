@@ -1,6 +1,6 @@
 // Jisste's service worker: keeps the app itself on the phone so it opens offline, and shows message alerts.
 // Chats are never cached here; they always come from the server.
-const VERSION = 'jisst-7';
+const VERSION = 'jisst-8';
 const SHELL = ['./', 'index.html', 'css/app.css', 'css/phone.css', 'js/native.js', 'js/main.js', 'js/api.js', 'js/matrix.js', 'js/demo.js', 'js/ui.js', 'js/crypto.js', 'js/calls.js', 'js/content.js', 'js/safety.js', 'js/link.js', 'vendor/minisearch/index.js',
   'agents/index.js', 'agents/jisst.js', 'agents/grandprix.js', 'agents/wire.js', 'agents/reminders.js', 'icons/icon.svg', 'icons/icon-192.png', 'manifest.webmanifest'];
 
