@@ -3,7 +3,7 @@
   --bg: #f7f2ec; --panel: #fffdfa; --ink: #1d1714; --muted: #6e625a; --line: #e9e0d5; --hover: #f3ebe2;
   --brand: #bf4d2b; --brand-ink: #ffffff; --brand-soft: #f7e2d9; --accent: #d89a00;
   --mine: #f5dccf; --theirs: #fffdfa; --wall: #eee6dc; --wall-dot: #e0d5c8; --tick: #bf4d2b; --agent: #0e7c86; --agent-soft: #dff3f4;
-  --danger: #c4302b; --shadow: 0 1px 1px rgba(29, 23, 20, .08);
+  --danger: #c4302b; --shadow: 0 1px 1px rgba(29, 23, 20, .08); --desk: #ebe3d8;
   --r: 14px; --tab-h: 62px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
@@ -11,11 +11,11 @@
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #14100d; --panel: #1d1814; --ink: #f2ebe4; --muted: #a89a8f; --line: #30271f; --hover: #27201a;
   --brand: #ec7a54; --brand-ink: #1a0b05; --brand-soft: #3a2218; --accent: #f0bb3a;
-  --mine: #58301f; --theirs: #27201a; --wall: #100c0a; --wall-dot: #1c1612; --tick: #f39b7b; --agent: #45c4cc; --agent-soft: #12343a; --danger: #ff6b66; color-scheme: dark; } }
+  --mine: #58301f; --theirs: #27201a; --wall: #100c0a; --wall-dot: #1c1612; --tick: #f39b7b; --agent: #45c4cc; --agent-soft: #12343a; --danger: #ff6b66; --desk: #0b0907; color-scheme: dark; } }
 :root[data-theme="dark"] {
   --bg: #14100d; --panel: #1d1814; --ink: #f2ebe4; --muted: #a89a8f; --line: #30271f; --hover: #27201a;
   --brand: #ec7a54; --brand-ink: #1a0b05; --brand-soft: #3a2218; --accent: #f0bb3a;
-  --mine: #58301f; --theirs: #27201a; --wall: #100c0a; --wall-dot: #1c1612; --tick: #f39b7b; --agent: #45c4cc; --agent-soft: #12343a; --danger: #ff6b66; color-scheme: dark; }
+  --mine: #58301f; --theirs: #27201a; --wall: #100c0a; --wall-dot: #1c1612; --tick: #f39b7b; --agent: #45c4cc; --agent-soft: #12343a; --danger: #ff6b66; --desk: #0b0907; color-scheme: dark; }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; margin: 0; }
@@ -52,6 +52,15 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
   #chathead { padding-left: 16px; }
   .tabbar { display: none !important; }
 }
+
+/* computers: the app sits in a fixed-width box in the middle of the screen, not stretched edge to edge */
+@media (min-width: 1200px) {
+  html { background: var(--desk); }
+  body { background: var(--desk); padding: 20px; box-sizing: border-box; }
+  .app { max-width: 1240px; margin: 0 auto; height: 100%; border-radius: 18px; border: 1px solid var(--line); background: var(--panel);
+    box-shadow: 0 1px 2px rgba(29, 23, 20, .06), 0 18px 50px rgba(29, 23, 20, .12); }
+}
+@media (min-width: 1200px) and (min-height: 1000px) { body { padding: 36px 20px; } }
 
 .top { display: flex; align-items: center; gap: 8px; padding: calc(10px + env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) 10px max(14px, env(safe-area-inset-left, 0px)); min-height: 58px; background: var(--panel); }
 .top h1 { font-size: 22px; font-weight: 800; letter-spacing: -.02em; margin: 0; flex: 1; min-width: 0; }
