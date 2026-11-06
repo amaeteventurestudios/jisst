@@ -50,6 +50,13 @@ right for Read/Pin, bottom sheets with a handle that drag down to close, grouped
 card in phone browsers (once every 14 days at most). Every rule is scoped to `html.phone`, so computers are unchanged.
 Reduce motion turns the slides off.
 
+## Where it runs (6 November 2026)
+Jisste goes on **https://jisste.noveniqe.com** for now (and always on the free jisste.129-146-26-28.sslip.io). The noveniqe
+repo's "Jisste (deploy)" workflow deploys it with the server secrets that repo already has: every 30 minutes it checks this
+repo's main and runs `server/deploy.sh` when main changed. This repo's own deploy workflow only tests unless it is given the
+SERVER_* secrets. Owner steps: a DNS A record `jisste` -> 129.146.26.28 on noveniqe.com in Cloudflare (DNS only), then merge
+noveniqe's Jisste pull request and this one. Chat addresses stay `@name:jisste.com`, so moving to jisste.com later keeps everyone.
+
 ## The owner's steps to go live (no terminal)
 1. In this repo: Settings > Secrets and variables > Actions > New repository secret. Add the same three secrets the
    palasora repo has: `SERVER_HOST`, `SERVER_USER`, `SERVER_SSH_KEY`.
