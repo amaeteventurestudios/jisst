@@ -1,0 +1,16 @@
+name: Test
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm test
+      - name: Every app file parses
+        run: for f in app/js/*.js app/agents/*.js app/sw.js; do node --check "$f"; done

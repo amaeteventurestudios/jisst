@@ -1,0 +1,62 @@
+# Puts Jisste on the server whenever main changes, next to Palasora and Agent Grand Prix (each has its own site file in the
+# shared Caddy web server). The server's secrets already live in the noveniqe repo, whose "Jisste (deploy)" workflow runs
+# server/deploy.sh from this repo's main, so without secrets here this workflow only tests. To deploy from here instead, add in
+# this repo's Settings > Secrets and variables > Actions:
+#   Secrets (the same three values the palasora repo has):
+#     SERVER_HOST       the server's public IP address
+#     SERVER_USER       the login name (ubuntu on Oracle Cloud)
+#     SERVER_SSH_KEY    the whole private key file (BEGIN ... END lines included)
+#   Variables (optional):
+#     JISST_DOMAIN       the app's names, separated by spaces, main one first (default jisste.noveniqe.com). The free name
+#                        jisste.<the IP with dashes>.sslip.io is always added, so the app answers before DNS is set up.
+#     JISST_SERVER_NAME  the end of every chat address (@ada:jisste.com; default jisste.com). Before launch a new name starts the
+#                        chat server over, empty. At launch set JISST_LAUNCHED to yes: from then on the name never changes.
+#     JISST_OWNERS       your @handle in Jisste (more than one: separated by spaces). Reports of bad messages reach you there.
+#     JISST_LOCAL_AI     yes to run a free local model (Qwen3 on llama.cpp) for the helper agent's open questions. Off by default.
+#     JISST_FEED_URL     where the Jisste social network answers (default https://palasora.com)
+name: Deploy to server
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', 'gateway/**', 'server/**', 'package.json', '.github/workflows/deploy.yml']
+  workflow_dispatch:
+concurrency: deploy-jisst
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04-arm   # the server is ARM too
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Test
+        run: npm test
+      - name: Pack, copy to the server and (re)start the services
+        env:
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER: ${{ secrets.SERVER_USER }}
+          KEY: ${{ secrets.SERVER_SSH_KEY }}
+          DOMAIN: ${{ vars.JISST_DOMAIN || 'jisste.noveniqe.com' }}
+          SERVER_NAME: ${{ vars.JISST_SERVER_NAME }}
+          FEED: ${{ vars.JISST_FEED_URL }}
+          LAUNCHED: ${{ vars.JISST_LAUNCHED }}
+          LOCAL_AI: ${{ vars.JISST_LOCAL_AI }}
+          OWNERS: ${{ vars.JISST_OWNERS }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$HOST" ] || [ -z "$KEY" ]; then
+            echo "::notice::This repo has no server secrets, so the noveniqe repo's \"Jisste (deploy)\" workflow puts Jisste on the server instead (it checks main every 30 minutes)."
+            echo "SKIP=1" >> "$GITHUB_ENV"; exit 0
+          fi
+          bash server/deploy.sh
+      - name: Check the app answers
+        if: env.SKIP != '1'
+        run: |
+          ok=0
+          for n in $SITES; do
+            up=0
+            for i in $(seq 1 9); do curl -fsS -m 15 -o /dev/null "https://$n/api/health" && { up=1; break; }; sleep 10; done
+            if [ "$up" = 1 ]; then echo "OK: https://$n"; ok=1
+            else echo "::warning::https://$n doesn't answer yet. For a domain, check its DNS A record points at the server (in Cloudflare: DNS only, grey cloud)."; fi
+          done
+          [ "$ok" = 1 ] || echo "::warning::Jisste runs on the server, but no address answers from outside yet. HTTPS certificates can take a minute."

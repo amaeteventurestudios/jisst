@@ -1,0 +1,11 @@
+{
+  "name": "jisst",
+  "private": true,
+  "type": "module",
+  "description": "Jisste: chat with your friends and as many AI agents as you like.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test gateway/test/*.test.mjs",
+    "dev": "node tools/dev.mjs", "shots": "node tools/shot.mjs"
+  }
+}
