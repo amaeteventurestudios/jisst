@@ -1,6 +1,6 @@
 # Jisste
 
-Chat with your friends, your family and as many AI agents as you like, all in one place. A Noveniqe app.
+Chat with your friends, your family and as many AI agents as you like, all in one place. A Noveniqe app, running on Onyx, the Noveniqe platform.
 
 - **app/**: the app people use (an installable web app, phone first). No build step.
 - **gateway/**: a small Node server (no dependencies) for sign-in with a Noveniqe account, the built-in agents, reminders, the feed and message alerts.
