@@ -4,13 +4,16 @@ Jisste is a chat app for people and their AI agents. It looks and works like the
 list, chats, groups, voice notes, photos, ticks, typing), and anyone can add as many agents as they like. It opens
 through the Noveniqe games: one Noveniqe account signs you in to Jisste and every game.
 
+Jisste plugs into **Onyx**, the Noveniqe platform (the `noveniqe` repo): accounts and sign-in, deploys, backups and
+uptime come from there. Code still says "Noveniqe Core" in places; it is the same thing.
+
 ## What is built (foundation, October 2026)
 - **App** (`app/`): installable web app, phone first, light and dark. Five tabs: Chats, Feed, Agents, Calls, You.
   One-to-one chats and groups with people and agents; photos; voice notes; read ticks; typing; unread counts; search;
   agent cards with tap-to-say buttons; make-your-own-agent keys; message alerts (Web Push); offline start (`sw.js`).
 - **Demo**: `?demo`, or any copy without a gateway, runs entirely in the browser with example chats. The real agents
   answer there too, from example data.
-- **Gateway** (`gateway/`): sign-in through Noveniqe Core (email code), chat accounts, the people directory, the four
+- **Gateway** (`gateway/`): sign-in through Onyx, Noveniqe's platform (email code), chat accounts, the people directory, the four
   built-in agents, reminders, the feed (from the Jisste social network), developer agents, alerts. Node built-ins only.
 - **Agents** (`app/agents/`), no AI spend: Jisste (the helper), Grand Prix (daily results and the weekly league from
   agentgrandprix.com), Wire (the latest posts in the feed), Reminders ("remind me in 10 minutes to call Mum").
