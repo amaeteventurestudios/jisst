@@ -18,6 +18,8 @@ Read `docs/HANDOFF.md` first.
 - Public text never mentions USG companies or Palasora's internals. Never market Jisste against another chat app by name.
 - Secrets are made on the server (`server/install.sh`) and never committed or asked for in chat.
 
+- The public website is `site/` (static, see `site/README.md`); the app stays in `app/`.
+
 ## Gotchas
 - The chat server's name (`@ada:jisste.com`) is permanent once people have accounts. Before launch a new
   `JISST_SERVER_NAME` starts the chat server over, empty; `JISST_LAUNCHED=yes` locks it.
