@@ -77,5 +77,17 @@
   function onScroll() { if (!ticking) { ticking = true; requestAnimationFrame(function () { ticking = false; frame(); }); } }
   addEventListener('scroll', onScroll, { passive: true });
   addEventListener('resize', onScroll);
+
+  // headings that must sit on one line shrink until they fit their column
+  function fitOne() {
+    document.querySelectorAll('.h2.one').forEach(function (h) {
+      h.style.fontSize = '';
+      var size = parseFloat(getComputedStyle(h).fontSize), room = h.parentElement.clientWidth;
+      if (h.scrollWidth > room) h.style.fontSize = Math.max(15, Math.floor(size * room / h.scrollWidth * 0.98)) + 'px';
+    });
+  }
+  fitOne();
+  addEventListener('resize', fitOne);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitOne);
   frame();
 })();
