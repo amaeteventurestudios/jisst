@@ -54,7 +54,7 @@ const P = {
 };
 export const icon = (name, cls = '') => raw(`<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name] || ''}</svg>`);
 
-const COLORS = ['var(--brand)', '#0e7c86', '#d89a00', '#2f7d32', '#7a5c3e', '#2465c9', '#a23e5c', '#5a6b3c', '#6d6875', '#b5651d'];
+const COLORS = ['var(--brand)', '#0e7c86', '#2b2724', '#2f7d32', '#7a5c3e', '#2465c9', '#a23e5c', '#5a6b3c', '#6d6875', '#b5651d'];
 export function colorFor(id) { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; }
 export function initials(name) { const w = String(name || '?').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/); return ((w[0]?.[0] || '?') + (w.length > 1 ? w[w.length - 1][0] : '')).toUpperCase(); }
 export function avatar({ id, name, agent = null, group = false, size = '' }) {

@@ -49,7 +49,7 @@ html.phone .under { position: absolute; inset: 0; background: var(--bg); z-index
 /* ---------- lists ---------- */
 html.phone .row { min-height: 76px; }
 html.phone .row .name { font-size: 16.5px; }
-html.phone .fab { bottom: 16px; border-radius: 20px; box-shadow: 0 6px 18px color-mix(in srgb, var(--brand) 38%, transparent); }
+html.phone .fab { bottom: 16px; border-radius: 20px; box-shadow: 0 6px 18px rgba(22, 20, 18, .32); }
 html.phone .chips { padding-bottom: 8px; }
 
 /* swipe a chat sideways for quick actions (rules below, with the peek) */
