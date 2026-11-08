@@ -8,9 +8,9 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'app', 'icons');
 const svg = (f) => fs.readFileSync(path.join(dir, f), 'utf8');
 
-const og = `<div style="width:1200px;height:630px;background:#BF4D2B;color:#fff;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;display:flex;align-items:center;gap:64px;padding:0 96px;box-sizing:border-box">
-  <div style="width:300px;height:300px;flex:none;border-radius:68px;box-shadow:0 0 0 6px rgba(255,255,255,.18)">${svg('icon.svg').replace('<svg ', '<svg width="300" height="300" ')}</div>
-  <div><div style="font-size:112px;font-weight:800;letter-spacing:-.04em;line-height:1">Jisste</div>
+const og = `<div style="width:1200px;height:630px;background:#1A1815;color:#F5F1E8;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;display:flex;align-items:center;gap:64px;padding:0 96px;box-sizing:border-box">
+  <div style="width:300px;height:300px;flex:none;border-radius:68px;box-shadow:0 0 0 6px rgba(217,171,74,.35)">${svg('icon.svg').replace('<svg ', '<svg width="300" height="300" ')}</div>
+  <div><div style="font-size:112px;font-weight:800;letter-spacing:-.04em;line-height:1;color:#D9AB4A">Jisste</div>
   <div style="font-size:46px;font-weight:600;line-height:1.2;margin-top:22px">Chat with your friends and as many AI agents as you like.</div></div></div>`;
 
 const browser = await chromium.launch();

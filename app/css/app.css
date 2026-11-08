@@ -1,21 +1,21 @@
 /* Jisste. Phone first: one column with a tab bar; from 900px wide, a list beside the open chat (like chat apps on a computer). */
 :root {
-  --bg: #f7f2ec; --panel: #fffdfa; --ink: #1d1714; --muted: #6e625a; --line: #e9e0d5; --hover: #f3ebe2;
-  --brand: #bf4d2b; --brand-ink: #ffffff; --brand-soft: #f7e2d9; --accent: #d89a00;
-  --mine: #f5dccf; --theirs: #fffdfa; --wall: #eee6dc; --wall-dot: #e0d5c8; --tick: #bf4d2b; --agent: #0e7c86; --agent-soft: #dff3f4;
-  --danger: #c4302b; --shadow: 0 1px 1px rgba(29, 23, 20, .08); --desk: #ebe3d8;
+  --bg: #f5f1e8; --panel: #fffdf8; --ink: #161412; --muted: #756e63; --line: #e6dfd0; --hover: #efe9dc;
+  --brand: #a17521; --brand-ink: #ffffff; --brand-soft: #f3e8cc; --accent: #a17521; --onyx: #1a1815; --onyx-ink: #e9e2d2; --onyx-gold: #d9ab4a;
+  --mine: #efe1bd; --theirs: #fffdf8; --wall: #efe9dc; --wall-dot: #e3dbc9; --tick: #a17521; --agent: #0e7c86; --agent-soft: #dff3f4;
+  --danger: #c4302b; --shadow: 0 1px 1px rgba(22, 20, 18, .08); --desk: #1a1815;
   --r: 14px; --tab-h: 62px;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #14100d; --panel: #1d1814; --ink: #f2ebe4; --muted: #a89a8f; --line: #30271f; --hover: #27201a;
-  --brand: #ec7a54; --brand-ink: #1a0b05; --brand-soft: #3a2218; --accent: #f0bb3a;
-  --mine: #58301f; --theirs: #27201a; --wall: #100c0a; --wall-dot: #1c1612; --tick: #f39b7b; --agent: #45c4cc; --agent-soft: #12343a; --danger: #ff6b66; --desk: #0b0907; color-scheme: dark; } }
+  --bg: #0f0e0c; --panel: #1b1a17; --ink: #f3eee4; --muted: #a39b8c; --line: #2c2924; --hover: #24221e;
+  --brand: #d9ab4a; --brand-ink: #17130a; --brand-soft: #3a2f17; --accent: #d9ab4a; --onyx: #0a0908; --onyx-ink: #ddd4c2; --onyx-gold: #d9ab4a;
+  --mine: #4a3a17; --theirs: #24221e; --wall: #0b0a09; --wall-dot: #171512; --tick: #e6c172; --agent: #45c4cc; --agent-soft: #12343a; --danger: #ff6b66; --desk: #050504; color-scheme: dark; } }
 :root[data-theme="dark"] {
-  --bg: #14100d; --panel: #1d1814; --ink: #f2ebe4; --muted: #a89a8f; --line: #30271f; --hover: #27201a;
-  --brand: #ec7a54; --brand-ink: #1a0b05; --brand-soft: #3a2218; --accent: #f0bb3a;
-  --mine: #58301f; --theirs: #27201a; --wall: #100c0a; --wall-dot: #1c1612; --tick: #f39b7b; --agent: #45c4cc; --agent-soft: #12343a; --danger: #ff6b66; --desk: #0b0907; color-scheme: dark; }
+  --bg: #0f0e0c; --panel: #1b1a17; --ink: #f3eee4; --muted: #a39b8c; --line: #2c2924; --hover: #24221e;
+  --brand: #d9ab4a; --brand-ink: #17130a; --brand-soft: #3a2f17; --accent: #d9ab4a; --onyx: #0a0908; --onyx-ink: #ddd4c2; --onyx-gold: #d9ab4a;
+  --mine: #4a3a17; --theirs: #24221e; --wall: #0b0a09; --wall-dot: #171512; --tick: #e6c172; --agent: #45c4cc; --agent-soft: #12343a; --danger: #ff6b66; --desk: #050504; color-scheme: dark; }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; margin: 0; }
@@ -29,7 +29,7 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
 
 .app { height: 100%; display: flex; flex-direction: column; max-width: 100vw; overflow: hidden; }
 .boot { margin: auto; display: grid; justify-items: center; gap: 10px; color: var(--muted); }
-.mark { width: 64px; height: 64px; border-radius: 20px; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; font: 800 34px/1 var(--font); letter-spacing: -.04em; }
+.mark { width: 64px; height: 64px; border-radius: 20px; background: var(--onyx); color: var(--onyx-gold); display: grid; place-items: center; font: 800 34px/1 var(--font); letter-spacing: -.04em; }
 
 /* ---------- shell ---------- */
 .shell { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
@@ -40,10 +40,13 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
 .shell.in-chat .main { display: flex; }
 @media (min-width: 900px) {
   .shell { grid-template-columns: 68px minmax(320px, 400px) minmax(0, 1fr); }
-  .rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: calc(14px + env(safe-area-inset-top, 0px)) 0 14px; background: var(--bg); border-right: 1px solid var(--line); }
+  .rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: calc(14px + env(safe-area-inset-top, 0px)) 0 14px; background: var(--onyx); border-right: 1px solid var(--onyx); }
+  .rail .tab { color: var(--onyx-ink); opacity: .8; }
+  .rail .tab[aria-current="page"] { opacity: 1; color: var(--onyx-gold); }
+  .rail .tab[aria-current="page"] svg.i { color: var(--onyx-gold); }
   .rail .tab { width: 48px; height: 48px; border-radius: 14px; flex-direction: row; }
   .rail .tab span { display: none; }
-  .rail .tab[aria-current="page"] { background: var(--brand-soft); }
+  .rail .tab[aria-current="page"] { background: rgba(217, 171, 74, .16); }
   .rail .grow { flex: 1; }
   .side { border-right: 1px solid var(--line); }
   .shell.in-chat .side { display: flex; }
@@ -82,7 +85,7 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
 .chip { flex: none; padding: 6px 14px; border-radius: 18px; background: var(--bg); color: var(--muted); font-weight: 600; font-size: 14px; }
 .chip[aria-pressed="true"] { background: var(--brand-soft); color: var(--brand); }
 
-.fab { position: absolute; right: max(18px, env(safe-area-inset-right, 0px)); bottom: 18px; width: 56px; height: 56px; border-radius: 18px; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; box-shadow: 0 4px 14px color-mix(in srgb, var(--brand) 35%, transparent); }
+.fab { position: absolute; right: max(18px, env(safe-area-inset-right, 0px)); bottom: 18px; width: 56px; height: 56px; border-radius: 18px; background: var(--onyx); color: var(--onyx-gold); display: grid; place-items: center; box-shadow: 0 4px 14px rgba(22, 20, 18, .3); }
 .sidebody { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
 /* ---------- avatars ---------- */
@@ -223,8 +226,8 @@ svg.i { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-widt
 .welcome .points div { display: flex; gap: 12px; align-items: center; }
 .welcome .points svg.i { color: var(--brand); }
 .welcome .fine { color: var(--muted); font-size: 12.5px; text-align: center; margin: 0; }
-.demo-bar { background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; text-align: center; padding: calc(4px + env(safe-area-inset-top, 0px)) 12px 4px; display: flex; gap: 10px; justify-content: center; align-items: center; }
-.demo-bar button { text-decoration: underline; font-weight: 700; color: #fff; }
+.demo-bar { background: var(--onyx); color: var(--onyx-ink); font-size: 13px; font-weight: 600; text-align: center; padding: calc(4px + env(safe-area-inset-top, 0px)) 12px 4px; display: flex; gap: 10px; justify-content: center; align-items: center; }
+.demo-bar button { text-decoration: underline; font-weight: 700; color: var(--onyx-gold); }
 .demo-bar + .shell .top, .demo-bar + .welcome .inner { padding-top: 10px; }
 
 .toast { position: fixed; left: 50%; bottom: calc(86px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--panel); padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 50; max-width: calc(100vw - 32px); text-align: center; }
