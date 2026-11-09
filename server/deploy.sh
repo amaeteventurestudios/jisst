@@ -4,6 +4,7 @@
 # "Jisste (deploy)" workflow, which already holds the server's secrets. Run it from the root of a jisst checkout.
 #   HOST, USER, KEY        the server's address, login name and whole private key (the SERVER_* secrets)
 #   DOMAIN                 the app's names, main one first (a free jisste.<ip>.sslip.io name is always added)
+#   SITE                   optional: the website's name (the site/ folder), e.g. jisste.noveniqe.com
 #   SERVER_NAME, FEED, LAUNCHED, LOCAL_AI, OWNERS   optional, see .github/workflows/deploy.yml
 #   SHA                    optional: the commit being deployed, kept on the server so a later run can skip an unchanged one
 set -euo pipefail
@@ -27,7 +28,7 @@ DOMAIN=$(echo $DOMAIN)
 
 # pack
 rm -rf pack && mkdir -p pack/bin
-cp -r app gateway server package.json pack/
+cp -r app gateway server site package.json pack/
 for img in "$TUWUNEL_IMAGE:/usr/bin/tuwunel:tuwunel" "$LIVEKIT_IMAGE:/livekit-server:livekit-server"; do
   ref="${img%%:/*}"; rest="${img#*:/}"; src="/${rest%%:*}"; dst="${rest##*:}"
   id=$(docker create --platform linux/arm64 "$ref"); docker cp "$id:$src" "pack/bin/$dst"; docker rm "$id" >/dev/null
@@ -39,7 +40,7 @@ ls -lh jisst.tgz
 # copy and install
 clean() { printf '%s' "$1" | tr -cd 'A-Za-z0-9.:/_-'; }
 scp $OPTS jisst.tgz "$USER@$HOST:/tmp/"
-ssh $OPTS "$USER@$HOST" "JISST_PUBLIC_IP='$(clean "$HOST")' JISST_DOMAIN='$DOMAIN' JISST_SERVER_NAME='$(clean "${SERVER_NAME:-}")' JISST_FEED_URL='$(clean "${FEED:-}")' JISST_LAUNCHED='$(clean "${LAUNCHED:-}")' JISST_LOCAL_AI='$(clean "${LOCAL_AI:-}")' JISST_OWNERS='$(printf '%s' "${OWNERS:-}" | tr -cd 'A-Za-z0-9@:._ -')' bash -s" < server/install.sh
+ssh $OPTS "$USER@$HOST" "JISST_PUBLIC_IP='$(clean "$HOST")' JISST_DOMAIN='$DOMAIN' JISST_SITE_DOMAIN='$(clean "${SITE:-}")' JISST_SERVER_NAME='$(clean "${SERVER_NAME:-}")' JISST_FEED_URL='$(clean "${FEED:-}")' JISST_LAUNCHED='$(clean "${LAUNCHED:-}")' JISST_LOCAL_AI='$(clean "${LOCAL_AI:-}")' JISST_OWNERS='$(printf '%s' "${OWNERS:-}" | tr -cd 'A-Za-z0-9@:._ -')' bash -s" < server/install.sh
 [ -n "${SHA:-}" ] && ssh $OPTS "$USER@$HOST" "printf '%s\n' '$(clean "$SHA")' | sudo tee /opt/jisst/DEPLOYED >/dev/null"
 rm -f jisst.tgz
 [ -n "${GITHUB_ENV:-}" ] && echo "SITES=$DOMAIN" >> "$GITHUB_ENV"

@@ -501,3 +501,29 @@ body::after { inset: 0; background:
 :root[data-theme="dark"] body::before { opacity: 1.4; }
 .foot { position: relative; z-index: 0; }
 @media (prefers-reduced-motion: reduce) { body::before, body::after { animation: none; } }
+
+/* ─── the "which Jisste" chooser ─── */
+.choose { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px; }
+.choose-bg { position: absolute; inset: 0; background: rgba(10, 9, 8, .55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fadeIn .25s ease; }
+.choose-box { position: relative; width: min(720px, 100%); background: var(--bg); border: 1px solid var(--line-2); border-radius: 22px; padding: 30px 26px 22px; box-shadow: var(--shadow); text-align: center; animation: popIn .35s cubic-bezier(.2,.8,.2,1); }
+.choose-x { position: absolute; top: 12px; right: 14px; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--panel); color: var(--ink); font-size: 20px; cursor: pointer; }
+.choose-h { margin-top: 10px; font-size: clamp(22px, 4vw, 30px); letter-spacing: -.03em; }
+.choose-grid { margin-top: 22px; display: grid; gap: 12px; text-align: left; }
+@media (min-width: 640px) { .choose-grid { grid-template-columns: 1fr 1fr; } }
+.pick { display: grid; gap: 8px; padding: 20px; border-radius: 16px; border: 1px solid var(--line-2); background: var(--panel); transition: transform .2s, border-color .2s; }
+.pick:hover { transform: translateY(-2px); border-color: var(--brand); }
+.pick-onyx { background: var(--onyx); color: var(--onyx-ink); border-color: color-mix(in srgb, #d9ab4a 28%, transparent); }
+.pick-badge { font-weight: 800; letter-spacing: -.03em; font-size: 18px; }
+.pick-badge i { font-style: normal; color: var(--gold-hi); font-weight: 600; }
+.pick b { font-size: 20px; letter-spacing: -.02em; }
+.pick-onyx b { color: #fff; }
+.pick span:not(.pick-badge):not(.pick-go) { color: var(--muted); font-size: 14px; }
+.pick-onyx span:not(.pick-badge):not(.pick-go) { color: #a39b8c; }
+.pick-go { margin-top: 6px; font-weight: 600; color: var(--brand); }
+.pick-onyx .pick-go { color: var(--gold-hi); }
+.pick.soon { pointer-events: none; opacity: .85; }
+.pick.soon .pick-go::after { content: " (opening soon)"; color: #a39b8c; font-weight: 400; }
+.choose .fine { margin-top: 16px; }
+@keyframes fadeIn { from { opacity: 0; } }
+@keyframes popIn { from { opacity: 0; transform: translateY(14px) scale(.98); } }
+.choose[hidden] { display: none; }

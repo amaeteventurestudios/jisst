@@ -106,3 +106,29 @@
     });
   }, { passive: true });
 })();
+
+// Open Jisste: choose the app for you, or Jisste Teams for your business
+(function () {
+  var APP = 'https://app.jisste.noveniqe.com';
+  var TEAMS_LIVE = false;   // turn on when teams.jisste.noveniqe.com answers
+
+  // the old app address now shows this website: send installed-app windows and demo links on to the app
+  var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if (standalone || /[?&]demo\b/.test(location.search)) { location.replace(APP + location.pathname.replace(/^\/index\.html$/, '/') + location.search + location.hash); return; }
+  // (no service worker is registered here: browsers that still have the old app's one fetch sw.js, get the one that
+  // removes itself, and reload into this website)
+
+  var box = document.getElementById('choose'), last = null;
+  function open(e) { e.preventDefault(); last = document.activeElement; box.hidden = false; box.querySelector('.pick').focus(); }
+  function close() { box.hidden = true; if (last) last.focus(); }
+  document.querySelectorAll('[data-choose]').forEach(function (a) { a.addEventListener('click', open); });
+  if (!TEAMS_LIVE) {
+    // until Teams opens, every "start a team" link opens the chooser, where Teams says it is opening soon
+    document.querySelectorAll('a[href*="teams.jisste"]').forEach(function (a) {
+      if (a.hasAttribute('data-teams')) { a.classList.add('soon'); a.removeAttribute('href'); a.setAttribute('aria-disabled', 'true'); }
+      else a.addEventListener('click', open);
+    });
+  }
+  box.querySelectorAll('[data-close]').forEach(function (el) { el.addEventListener('click', close); });
+  addEventListener('keydown', function (e) { if (e.key === 'Escape' && !box.hidden) close(); });
+})();
