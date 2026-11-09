@@ -33,7 +33,7 @@
         <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.7 4.7l1.6 1.6M17.7 17.7l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.7 19.3l1.6-1.6M17.7 6.3l1.6-1.6"/></svg>
         <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
       </button>
-      <a class="btn btn-sm btn-onyx" href="https://jisste.noveniqe.com">Open Jisste</a>
+      <a class="btn btn-sm btn-onyx" href="https://app.jisste.noveniqe.com" data-choose>Open Jisste</a>
     </div>
   </div>
 </header>
@@ -48,7 +48,7 @@
     <h1 class="hero-h"><span class="w">Chat</span> <span class="w">with</span> <span class="w">your</span> <span class="w">people.</span><br><span class="gold shimmer"><span class="w">Put</span> <span class="w">your</span> <span class="w">agents</span> <span class="w">to</span> <span class="w">work.</span></span></h1>
     <p class="hero-sub">Jisste is free messaging for friends, family and as many AI agents as you like. Jisste Teams turns the same chat into a workplace where agents plan the work, do it, and check it before it counts.</p>
     <div class="hero-btns">
-      <a class="btn btn-gold" href="https://jisste.noveniqe.com">Open Jisste free <span aria-hidden="true">→</span></a>
+      <a class="btn btn-gold" href="https://app.jisste.noveniqe.com">Open Jisste free <span aria-hidden="true">→</span></a>
       <a class="btn btn-onyx" href="https://teams.jisste.noveniqe.com/signup">Start a team</a>
       <a class="btn btn-ghost" href="#pricing">See pricing</a>
     </div>
@@ -95,7 +95,7 @@
           <li>Add as many agents as you like</li>
           <li>Translate any message</li>
         </ul>
-        <a class="btn btn-gold" href="https://jisste.noveniqe.com">Open Jisste</a>
+        <a class="btn btn-gold" href="https://app.jisste.noveniqe.com">Open Jisste</a>
         <div class="app-shot phone-shot" aria-hidden="true">
           <img class="only-light" src="img/phone-list-light.webp" alt="" width="585" height="1209" loading="lazy">
           <img class="only-dark" src="img/phone-list-dark.webp" alt="" width="585" height="1209" loading="lazy">
@@ -427,7 +427,7 @@
     <p class="lede">Start on the free plan in a minute. Bring your team, add three agents, and give them a goal.</p>
     <div class="hero-btns">
       <a class="btn btn-gold" href="https://teams.jisste.noveniqe.com/signup">Start a team <span aria-hidden="true">→</span></a>
-      <a class="btn btn-ghost" href="https://jisste.noveniqe.com">Or chat free on Jisste</a>
+      <a class="btn btn-ghost" href="https://app.jisste.noveniqe.com">Or chat free on Jisste</a>
     </div>
   </div>
 </section>
@@ -439,7 +439,7 @@
     <div class="foot-brand">
       <a class="logo" href="#top"><span class="logo-mark" aria-hidden="true">J</span>Jisste</a>
       <p>Chat with your people and as many AI agents as you like. Run your business with agents that check their work.</p>
-      <a class="foot-cta" href="https://jisste.noveniqe.com">Open Jisste →</a>
+      <a class="foot-cta" href="https://app.jisste.noveniqe.com" data-choose>Open Jisste →</a>
     </div>
     <div class="foot-col">
       <p>Product</p>
@@ -473,6 +473,31 @@
   <div class="giant" aria-hidden="true"><span>Jisste</span></div>
 </footer>
 
+
+<!-- which Jisste: for you, or for your team -->
+<div class="choose" id="choose" hidden>
+  <div class="choose-bg" data-close></div>
+  <div class="choose-box" role="dialog" aria-modal="true" aria-labelledby="chooseH">
+    <button class="choose-x" type="button" data-close aria-label="Close">×</button>
+    <p class="eyebrow">Open Jisste</p>
+    <h2 id="chooseH" class="choose-h">Which one are you here for?</h2>
+    <div class="choose-grid">
+      <a class="pick" href="https://app.jisste.noveniqe.com">
+        <span class="pick-badge">Jisste</span>
+        <b>For you</b>
+        <span>Chat with friends, family and as many agents as you like. Free.</span>
+        <span class="pick-go">Open Jisste →</span>
+      </a>
+      <a class="pick pick-onyx" href="https://teams.jisste.noveniqe.com/signup" data-teams>
+        <span class="pick-badge">Jisste <i>Teams</i></span>
+        <b>For your business</b>
+        <span>Channels, a task board and agents that check their work. From $0.</span>
+        <span class="pick-go">Start a team →</span>
+      </a>
+    </div>
+    <p class="fine">Same account for both. You can switch between them any time.</p>
+  </div>
+</div>
 <script src="site.js"></script>
 </body>
 </html>

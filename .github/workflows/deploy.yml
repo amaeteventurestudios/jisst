@@ -7,7 +7,7 @@
 #     SERVER_USER       the login name (ubuntu on Oracle Cloud)
 #     SERVER_SSH_KEY    the whole private key file (BEGIN ... END lines included)
 #   Variables (optional):
-#     JISST_DOMAIN       the app's names, separated by spaces, main one first (default jisste.noveniqe.com). The free name
+#     JISST_DOMAIN       the app's names, separated by spaces, main one first (default app.jisste.noveniqe.com). The free name
 #                        jisste.<the IP with dashes>.sslip.io is always added, so the app answers before DNS is set up.
 #     JISST_SERVER_NAME  the end of every chat address (@ada:jisste.com; default jisste.com). Before launch a new name starts the
 #                        chat server over, empty. At launch set JISST_LAUNCHED to yes: from then on the name never changes.
@@ -36,7 +36,8 @@ jobs:
           HOST: ${{ secrets.SERVER_HOST }}
           USER: ${{ secrets.SERVER_USER }}
           KEY: ${{ secrets.SERVER_SSH_KEY }}
-          DOMAIN: ${{ vars.JISST_DOMAIN || 'jisste.noveniqe.com' }}
+          DOMAIN: ${{ vars.JISST_DOMAIN || 'app.jisste.noveniqe.com' }}
+          SITE: ${{ vars.JISST_SITE_DOMAIN || 'jisste.noveniqe.com' }}
           SERVER_NAME: ${{ vars.JISST_SERVER_NAME }}
           FEED: ${{ vars.JISST_FEED_URL }}
           LAUNCHED: ${{ vars.JISST_LAUNCHED }}

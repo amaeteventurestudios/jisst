@@ -14,6 +14,9 @@ set -euo pipefail
 : "${JISST_DOMAIN:?set JISST_DOMAIN}"
 read -r -a NAMES <<< "$(printf '%s' "$JISST_DOMAIN" | tr ',' ' ')"
 MAIN="${NAMES[0]}"
+# the website (site/) on its own name; never one of the app's names
+SITE_NAME="${JISST_SITE_DOMAIN:-}"
+for n in "${NAMES[@]}"; do [ "$n" = "$SITE_NAME" ] && { echo "The website name $SITE_NAME is also an app name: the app keeps it, the website is skipped."; SITE_NAME=""; }; done
 APP=/opt/jisst NODE_DIR=/opt/jisst-node DATA=/var/lib/jisst ENVF=/etc/jisst.env TWCONF=/etc/jisst-tuwunel.toml LKCONF=/etc/jisst-livekit.yaml
 NODE_V=v22.11.0 HS_PORT=8318 GW_PORT=8300 LK_PORT=7880
 # The end of every chat address (@ada:jisste.com). A different name is a different chat server, so it is fixed at launch.
@@ -249,6 +252,7 @@ fi
 if [ ! -x /usr/local/bin/caddy ] || [ ! -d /etc/caddy/sites ]; then
   echo 'The shared Caddy web server is missing (the Agent Grand Prix deploy installs it). Jisste runs, but is not on the web yet.'; exit 1
 fi
+sudo cp -a /etc/caddy/sites/jisst.caddy /tmp/jisst.caddy.bak 2>/dev/null || true
 sudo tee /etc/caddy/sites/jisst.caddy >/dev/null <<CADDY
 $(IFS=,; echo "${NAMES[*]}" | sed 's/,/, /g') {
 	encode zstd gzip
@@ -283,7 +287,28 @@ $(IFS=,; echo "${NAMES[*]}" | sed 's/,/, /g') {
 	}
 }
 CADDY
-sudo /usr/local/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+# the website: its own block in the same file. Anything that isn't a website file goes to the app, so old app links keep working.
+if [ -n "$SITE_NAME" ] && [ -d "$APP/site" ]; then
+  sudo tee -a /etc/caddy/sites/jisst.caddy >/dev/null <<CADDY
+
+$SITE_NAME {
+	encode zstd gzip
+	root * $APP/site
+	@app not file {path} {path}/index.html
+	redir @app https://$MAIN{uri} 302
+	@fresh path / /index.html /sw.js /site.css /site.js
+	header @fresh Cache-Control "no-cache"
+	header X-Content-Type-Options nosniff
+	header Referrer-Policy strict-origin-when-cross-origin
+	file_server
+}
+CADDY
+fi
+if ! sudo /usr/local/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null; then
+  # never leave a broken file behind: every site on the server shares this Caddy
+  if [ -f /tmp/jisst.caddy.bak ]; then sudo cp -a /tmp/jisst.caddy.bak /etc/caddy/sites/jisst.caddy; else sudo rm -f /etc/caddy/sites/jisst.caddy; fi
+  echo '::error::The new Caddy file did not validate; the old one is back in place.'; exit 1
+fi
 sudo systemctl reload caddy
 
 # ---- checks ----

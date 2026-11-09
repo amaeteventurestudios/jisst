@@ -54,7 +54,7 @@ card in phone browsers (once every 14 days at most). Every rule is scoped to `ht
 Reduce motion turns the slides off.
 
 ## Where it runs (6 November 2026)
-Jisste goes on **https://jisste.noveniqe.com** for now (and always on the free jisste.129-146-26-28.sslip.io). The noveniqe
+The website (`site/`) is on **https://jisste.noveniqe.com** and the app on **https://app.jisste.noveniqe.com** (from 2026-11-09; anything on the website's name that isn't a website file goes to the app). The app also always answers on the free jisste.129-146-26-28.sslip.io. The noveniqe
 repo's "Jisste (deploy)" workflow deploys it with the server secrets that repo already has: every 30 minutes it checks this
 repo's main and runs `server/deploy.sh` when main changed. This repo's own deploy workflow only tests unless it is given the
 SERVER_* secrets. Owner steps: a DNS A record `jisste` -> 129.146.26.28 on noveniqe.com in Cloudflare (DNS only), then merge
