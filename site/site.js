@@ -91,3 +91,18 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitOne);
   frame();
 })();
+
+// the page's background light follows the scroll a little
+(function () {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var r = document.documentElement, t = false;
+  addEventListener('scroll', function () {
+    if (t) return; t = true;
+    requestAnimationFrame(function () {
+      t = false;
+      var k = scrollY / Math.max(1, document.body.scrollHeight - innerHeight);
+      r.style.setProperty('--gx', (20 + 60 * Math.sin(k * Math.PI)).toFixed(1) + '%');
+      r.style.setProperty('--gy', (25 + 50 * k).toFixed(1) + '%');
+    });
+  }, { passive: true });
+})();
