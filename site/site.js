@@ -110,7 +110,7 @@
 // Open Jisste: choose the app for you, or Jisste Teams for your business
 (function () {
   var APP = 'https://app.jisste.noveniqe.com';
-  var TEAMS_LIVE = false;   // turn on when teams.jisste.noveniqe.com answers
+  var TEAMS_LIVE = true;    // teams.jisste.noveniqe.com is live (10 Nov 2026)
 
   // the old app address now shows this website: send installed-app windows and demo links on to the app
   var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;

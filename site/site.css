@@ -451,7 +451,7 @@ i.c-a, i.c-m, i.c-n { font-style: normal; color: #fff; padding: 1px 5px; border-
   .cell .ic { margin-inline: auto; }
   .price { text-align: center; align-items: center; }
   .p-name { justify-content: center; gap: 10px; }
-  .p-amt { justify-content: center; }
+  .p-amt { justify-content: center; flex-wrap: wrap; } .p-amt span { flex-basis: 100%; text-align: center; }
   .price .ticks { justify-items: center; }
   .price .ticks li { text-align: left; }
   .shot figcaption { text-align: center; }
