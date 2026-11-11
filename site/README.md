@@ -17,5 +17,5 @@ Check 390x844 and 1280x800, light and dark.
 Where it runs: the same server as the app. `server/install.sh` serves `site/` on `JISST_SITE_DOMAIN` (default
 jisste.noveniqe.com) and sends anything that isn't a website file to the app (app.jisste.noveniqe.com), so old app links
 keep working. `site/sw.js` removes the old app's service worker from browsers that had the app on this address.
-"Open Jisste" opens a chooser (Jisste for you, Jisste Teams for your business). Set `TEAMS_LIVE = true` in `site.js` when
-teams.jisste.noveniqe.com is up.
+"Open Jisste" opens a chooser (Jisste for you, Jisste Teams for your business). `TEAMS_LIVE` in `site.js` is on since
+teams.jisste.noveniqe.com went live (10 Nov 2026); set it to false to show "opening soon" again.
