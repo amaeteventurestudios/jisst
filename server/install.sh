@@ -249,6 +249,9 @@ elif command -v iptables >/dev/null; then
 fi
 
 # ---- the address: Jisste's own file in the shared Caddy ----
+# Every answer carries the browser safety headers. "?" only fills in a header nothing else has set, and the policy does
+# not limit scripts, calls, the camera or the microphone: it switches off plugins, stops other sites framing Jisste and
+# keeps every request on https.
 if [ ! -x /usr/local/bin/caddy ] || [ ! -d /etc/caddy/sites ]; then
   echo 'The shared Caddy web server is missing (the Agent Grand Prix deploy installs it). Jisste runs, but is not on the web yet.'; exit 1
 fi
@@ -256,6 +259,13 @@ sudo cp -a /etc/caddy/sites/jisst.caddy /tmp/jisst.caddy.bak 2>/dev/null || true
 sudo tee /etc/caddy/sites/jisst.caddy >/dev/null <<CADDY
 $(IFS=,; echo "${NAMES[*]}" | sed 's/,/, /g') {
 	encode zstd gzip
+	header {
+		?Strict-Transport-Security "max-age=31536000"
+		?Content-Security-Policy "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; upgrade-insecure-requests"
+		?X-Frame-Options SAMEORIGIN
+		?X-Content-Type-Options nosniff
+		?Referrer-Policy strict-origin-when-cross-origin
+	}
 	request_body /_matrix/* {
 		max_size 25MB
 	}
@@ -293,6 +303,13 @@ if [ -n "$SITE_NAME" ] && [ -d "$APP/site" ]; then
 
 $SITE_NAME {
 	encode zstd gzip
+	header {
+		?Strict-Transport-Security "max-age=31536000"
+		?Content-Security-Policy "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; upgrade-insecure-requests"
+		?X-Frame-Options SAMEORIGIN
+		?X-Content-Type-Options nosniff
+		?Referrer-Policy strict-origin-when-cross-origin
+	}
 	root * $APP/site
 	@app not file {path} {path}/index.html
 	redir @app https://$MAIN{uri} 302
