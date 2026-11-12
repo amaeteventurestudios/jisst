@@ -249,9 +249,10 @@ elif command -v iptables >/dev/null; then
 fi
 
 # ---- the address: Jisste's own file in the shared Caddy ----
-# Every answer carries the browser safety headers. "?" only fills in a header nothing else has set, and the policy does
-# not limit scripts, calls, the camera or the microphone: it switches off plugins, stops other sites framing Jisste and
-# keeps every request on https.
+# Every answer carries the browser safety headers (nosniff and the referrer rule are set where the files are served).
+# The policy does not limit scripts, calls, the camera or the microphone: it switches off plugins, stops other sites
+# framing Jisste and keeps every request on https. These are set outright, not with "?": a "?" block only applies when
+# none of its headers is already there, and the file blocks below set nosniff, so it never applied.
 if [ ! -x /usr/local/bin/caddy ] || [ ! -d /etc/caddy/sites ]; then
   echo 'The shared Caddy web server is missing (the Agent Grand Prix deploy installs it). Jisste runs, but is not on the web yet.'; exit 1
 fi
@@ -260,11 +261,9 @@ sudo tee /etc/caddy/sites/jisst.caddy >/dev/null <<CADDY
 $(IFS=,; echo "${NAMES[*]}" | sed 's/,/, /g') {
 	encode zstd gzip
 	header {
-		?Strict-Transport-Security "max-age=31536000"
-		?Content-Security-Policy "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; upgrade-insecure-requests"
-		?X-Frame-Options SAMEORIGIN
-		?X-Content-Type-Options nosniff
-		?Referrer-Policy strict-origin-when-cross-origin
+		Strict-Transport-Security "max-age=31536000"
+		Content-Security-Policy "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; upgrade-insecure-requests"
+		X-Frame-Options SAMEORIGIN
 	}
 	request_body /_matrix/* {
 		max_size 25MB
@@ -304,11 +303,9 @@ if [ -n "$SITE_NAME" ] && [ -d "$APP/site" ]; then
 $SITE_NAME {
 	encode zstd gzip
 	header {
-		?Strict-Transport-Security "max-age=31536000"
-		?Content-Security-Policy "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; upgrade-insecure-requests"
-		?X-Frame-Options SAMEORIGIN
-		?X-Content-Type-Options nosniff
-		?Referrer-Policy strict-origin-when-cross-origin
+		Strict-Transport-Security "max-age=31536000"
+		Content-Security-Policy "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; upgrade-insecure-requests"
+		X-Frame-Options SAMEORIGIN
 	}
 	root * $APP/site
 	@app not file {path} {path}/index.html
